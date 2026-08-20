@@ -112,6 +112,7 @@ No test framework, no new dependency — plain asserts, run directly:
 python tests/test_dsp.py       # 32 checks
 python tests/test_sources.py   # 28 checks
 python tests/test_segment.py   # 29 checks
+python tests/test_classify.py  # 27 checks
 ```
 
 `dsp.py` is tested only on signals whose correct answer is known in advance — pure
@@ -182,6 +183,23 @@ true incremental peak detection — a deliberate scope cut, not a silent one: tr
 streaming peak-picking needs its own state machine to hold a candidate peak until
 enough future samples confirm it, which the hour budget did not have room for.
 Recomputing over an 8 s buffer once per UI redraw costs nothing measurable at 2 kHz.
+
+## Classification
+
+`classify.py` is a deterministic triage heuristic, not the CNN CLAUDE.md specifies. The
+CNN needs the CinC 2016 dataset to train against; PhysioNet remains unreachable from
+this environment, so it was never attempted — not stubbed to a fake output, simply not
+built. Per CLAUDE.md's own instruction for this exact situation, the deterministic
+layer ships alone.
+
+What it actually evaluates is heart rate (outside a typical resting range) and
+beat-to-beat rhythm regularity (coefficient of variation of consecutive S1-S1
+intervals) from `segment.py`'s output. This is the same cue a community health worker
+already uses with two fingers and a watch, timed more precisely — it is **not**
+listening to the sound of the heartbeat for murmurs, rubs, or any other morphology, and
+must never be described as though it were. `ClassifyResult.confidence` is a heuristic
+weight, not a probability and not a measured accuracy figure; nothing has been
+evaluated against a held-out set, so nothing may be shown to a user as "N% accurate."
 
 ## Known threat: domain shift
 

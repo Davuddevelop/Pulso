@@ -57,10 +57,29 @@ or `app.py`, the abstraction is wrong.
 | Internal sample rate | 2000 Hz | CinC 2016 ships at 2 kHz; no resampling on the training path. Nyquist 1 kHz covers heart (20–200 Hz) and most lung (100–1000 Hz). |
 | Frame size | 1024 samples (~0.5 s) | Enough envelope context for beat detection, still feels real-time. |
 | Heart bandpass | 25–200 Hz, Butterworth order 4 | Below 25 Hz is handling noise and DC drift; above 200 Hz is not heart sound. |
-| Lung bandpass | 100–1000 Hz, Butterworth order 4 | Standard respiratory band. |
+| Lung bandpass | 100–**950** Hz, Butterworth order 4 | Standard respiratory band is quoted as 100–1000 Hz, but at fs = 2000 Hz, 1000 Hz *is* Nyquist and is not a realisable digital filter edge (the design needs 0 < Wn < 1). See note below. |
 | Filter application | `sosfiltfilt` offline, `sosfilt` + persistent `zi` streaming | Order-4 IIR in `ba` form is numerically unstable. SOS only. |
 | Envelope | Shannon energy, then ~50 ms moving average | Standard for PCG; suppresses low-amplitude noise better than rectification. |
 | Audio I/O | `soundfile` for files, `sounddevice` for mic | `sounddevice`'s callback API maps cleanly onto `read_frame`. |
+
+### Two deviations from the spec, both deliberate
+
+**Lung band ends at 950 Hz, not 1000 Hz.** 1000 Hz is exactly Nyquist at a 2 kHz sample
+rate, so it cannot be a filter edge — `scipy.signal.butter` requires the normalised
+cutoff strictly below 1.0 and raises otherwise. The content between 950 and 1000 Hz is
+unreachable at this sample rate no matter how the band is written down. `design_bandpass`
+rejects any cutoff at or above Nyquist with an explicit error rather than silently
+clamping it, so this can never happen by accident.
+
+**`FileSource` resamples internally** when a file is not already at 2 kHz. The
+alternative was to refuse the file. `sample_rate` is declared on the `AudioSource` ABC,
+so a source that could return 44100 would turn that attribute into something every
+caller must *check* rather than rely on — and `app.py` would grow a rate branch, then
+`segment.py` would need one for the BPM arithmetic, and the boundary would be gone. The
+cost is that a demo file gets a resampling filter the training data never saw, so it is
+made visible rather than silent: the resample is logged, and `FileSource.original_rate`
+and `.resampled` are kept so the training path can assert it never touched a record.
+CinC ships at 2 kHz, so on the training path this is always a no-op.
 
 ## Setup
 
@@ -84,6 +103,32 @@ This synthesises a phonocardiogram-like WAV at a known heart rate, writes it at
 2000 Hz, reads it back, asserts the round trip is sample-accurate, and plots it to
 `out/check_io.png`. It exists so that a filter or I/O bug surfaces at hour 0 rather
 than hour 4, and so the pipeline has a ground-truth signal to test against.
+
+## Tests
+
+No test framework, no new dependency — plain asserts, run directly:
+
+```bash
+python tests/test_dsp.py       # 32 checks
+python tests/test_sources.py   # 28 checks
+```
+
+`dsp.py` is tested only on signals whose correct answer is known in advance — pure
+tones, chirps, impulses, and a synthetic PCG with exact S1/S2 positions. Real audio
+cannot tell you whether a wrong answer came from the filter or from the recording.
+
+Two of these checks are load-bearing and worth knowing about:
+
+- **Streaming continuity.** Frame-by-frame filtering is asserted bit-identical to
+  whole-signal filtering. Filtering each frame with fresh state instead puts a
+  discontinuity at every frame boundary, which the envelope detector reads as a beat
+  every 1024 samples — a rock-steady, entirely fake heart rate of 117 bpm. The test
+  also asserts that the naive version *does* fail, so the check cannot rot into a
+  tautology.
+- **Source interchangeability.** The same downstream code recovers 71.99 bpm from a
+  2 kHz file, a 44.1 kHz file, and an in-memory array. That is the architectural claim
+  made executable: if a hardware source ever needs a downstream edit, this test is
+  where it should break first.
 
 ## Data
 

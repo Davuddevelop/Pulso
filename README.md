@@ -201,6 +201,30 @@ must never be described as though it were. `ClassifyResult.confidence` is a heur
 weight, not a probability and not a measured accuracy figure; nothing has been
 evaluated against a held-out set, so nothing may be shown to a user as "N% accurate."
 
+## Running the live demo
+
+```bash
+python app.py --file out/check_io_pcm16.wav     # or any WAV
+python app.py --mic                              # live microphone
+```
+
+Press `m` to switch between file playback and the microphone, `q` to quit. `app.py`
+draws exactly what `segment.py` and `classify.py` report — it contains no DSP logic of
+its own.
+
+**This has not been watched running on a real screen.** This session's container has
+no display and no audio input device. What exists instead is
+`tools/check_app.py` — a headless smoke test (matplotlib's Agg backend) that drives the
+real update loop against a synthetic recording and asserts state actually advances
+(BPM appears, beats appear, the status text changes), plus a static snapshot rendered
+the same way. That is real coverage of the orchestration logic, but a plot that has
+never been watched scrolling on a real screen can still surprise you. Run it on your
+laptop before it goes in front of a judge.
+
+```bash
+python tools/check_app.py   # 75 checks, headless
+```
+
 ## Known threat: domain shift
 
 The model would train on clinical stethoscope audio and run on a cheap contact mic

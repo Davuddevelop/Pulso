@@ -190,6 +190,31 @@ def test_streaming_beat_indices_are_absolute() -> None:
           last_beat > seg.buffer_len, f"last beat idx {last_beat}, buffer_len {seg.buffer_len}")
 
 
+def test_display_buffers_are_aligned() -> None:
+    """app.py plots raw/filtered/envelope/beats on one shared axis -- they must agree."""
+    print("display buffers stay aligned with beat indices")
+    signal, _, _ = synth_pcg(duration_s=6.0, bpm=72.0)
+    seg = HeartSegmenter(sample_rate=SAMPLE_RATE, buffer_s=8.0)
+
+    result = None
+    for start in range(0, signal.size - FRAME_SIZE + 1, FRAME_SIZE):
+        result = seg.push(signal[start : start + FRAME_SIZE])
+
+    check("raw and filtered buffers are the same length",
+          seg.raw_buffer.size == seg.filtered_buffer.size)
+    check("envelope buffer matches filtered buffer length",
+          seg.envelope_buffer.size == seg.filtered_buffer.size)
+
+    for beat in result.beats:
+        local = beat.sample_idx - seg.buffer_start_sample
+        check(f"beat at {beat.sample_idx} maps inside the buffer", 0 <= local < seg.envelope_buffer.size,
+              f"local index {local}, buffer size {seg.envelope_buffer.size}")
+        # The peak-picker chose this sample because it's a local max of the envelope;
+        # confirm the buffer we hand to a plotter actually agrees at that position.
+        check(f"beat at {beat.sample_idx} sits on its own envelope peak",
+              seg.envelope_buffer[local] == beat.amplitude)
+
+
 def main() -> int:
     for fn in [
         test_offline_normal_rate,
@@ -200,6 +225,7 @@ def main() -> int:
         test_silence_reports_noisy,
         test_streaming_matches_offline_bpm,
         test_streaming_beat_indices_are_absolute,
+        test_display_buffers_are_aligned,
     ]:
         fn()
     print(f"\n{PASSED} checks passed.")

@@ -182,13 +182,44 @@ class HeartSegmenter:
 
         self._sos = dsp.heart_sos(sample_rate)
         self._zi: np.ndarray | None = None
+        self._raw = np.zeros(0, dtype=np.float32)
         self._filtered = np.zeros(0, dtype=np.float32)
+        self._envelope = np.zeros(0, dtype=np.float32)
         self._samples_seen = 0
 
     def reset(self) -> None:
         self._zi = None
+        self._raw = np.zeros(0, dtype=np.float32)
         self._filtered = np.zeros(0, dtype=np.float32)
+        self._envelope = np.zeros(0, dtype=np.float32)
         self._samples_seen = 0
+
+    @property
+    def buffer_start_sample(self) -> int:
+        """Absolute sample index of buffer[0]. Beat.sample_idx is in this same frame,
+        so a display can line waveform/envelope/beats up with `idx - buffer_start_sample`.
+        """
+        return self._samples_seen - self._filtered.size
+
+    @property
+    def raw_buffer(self) -> np.ndarray:
+        """Unfiltered audio for the trailing window -- what a waveform panel should plot."""
+        return self._raw
+
+    @property
+    def filtered_buffer(self) -> np.ndarray:
+        """Heart-bandpassed audio for the trailing window."""
+        return self._filtered
+
+    @property
+    def envelope_buffer(self) -> np.ndarray:
+        """Envelope for the trailing window, same length and alignment as filtered_buffer.
+
+        Only as fresh as the last push() -- computing it once per push and caching it
+        here means a display reading it between calls sees the same envelope
+        _analyze() reasoned about, not a second independent computation.
+        """
+        return self._envelope
 
     def push(self, frame: np.ndarray) -> SegmentResult:
         """Feed one frame (any length) of raw, unfiltered audio. Returns the current read."""
@@ -198,17 +229,20 @@ class HeartSegmenter:
         filtered, self._zi = dsp.filter_stream(frame, self._sos, self._zi)
         self._samples_seen += frame.size
 
+        self._raw = np.concatenate([self._raw, frame])[-self.buffer_len :]
         self._filtered = np.concatenate([self._filtered, filtered])[-self.buffer_len :]
 
         return self._analyze(self._filtered, offset=self._samples_seen - self._filtered.size)
 
     def _analyze(self, filtered_buffer: np.ndarray, offset: int) -> SegmentResult:
         if filtered_buffer.size < int(0.5 * self.sample_rate):
+            self._envelope = np.zeros_like(filtered_buffer)
             return SegmentResult([], None, False, "noisy", "warming up")
 
         env = dsp.envelope(filtered_buffer, self.sample_rate)
+        self._envelope = env
         distance = max(1, int(REFRACTORY_S * self.sample_rate))
-        peaks, props = find_peaks(env, height=PEAK_HEIGHT, distance=distance)
+        peaks, _ = find_peaks(env, height=PEAK_HEIGHT, distance=distance)
 
         if peaks.size == 0:
             return SegmentResult([], None, False, "noisy", "no heart sounds detected above the noise floor")
@@ -222,9 +256,7 @@ class HeartSegmenter:
             return SegmentResult(beats, None, confident, "noisy",
                                   "beats detected but rate is not physiologically plausible")
 
-        quality = "good"
-        reason = "ok"
-        return SegmentResult(beats, bpm, confident, quality, reason)
+        return SegmentResult(beats, bpm, confident, "good", "ok")
 
 
 def segment_offline(signal: np.ndarray, sample_rate: int) -> SegmentResult:

@@ -1,0 +1,124 @@
+# Pulso — auscultation triage MVP
+
+> **Not a medical device. Not for clinical use.**
+> Pulso produces a *triage signal* for a community health worker. It does not
+> diagnose, name conditions, or suggest treatment.
+
+A low-cost digital stethoscope triage tool. A contact microphone captures heart and
+lung sounds, streams them to a laptop, and the software flags patterns worth a second
+listen.
+
+Output vocabulary is fixed and deliberately narrow:
+
+| Output | Meaning |
+|---|---|
+| `normal` | Nothing in the signal met the review threshold. |
+| `review recommended` | Something met the threshold. A human should listen. |
+| `signal too noisy` | The input is not good enough to say anything at all. |
+
+There is no fourth option, and no accuracy figure is quoted anywhere unless it was
+measured on a held-out set.
+
+## Status
+
+Hardware does not exist yet. Everything runs from recorded audio files, and the
+capture layer is abstracted so that a hardware source can be dropped in later without
+touching any downstream module.
+
+## Architecture
+
+Everything downstream of audio capture is ignorant of where the audio came from.
+
+```
+sources.py    AudioSource ABC -> FileSource, MicSource, (later) ESP32Source
+dsp.py        pure functions, no state, no I/O -> filters, envelope
+segment.py    stateful -> beat detection, S1/S2 labelling, heart rate
+classify.py   window in -> {label, confidence} out
+app.py        UI / orchestration only. No DSP logic lives here.
+```
+
+The contract every source honours:
+
+```python
+class AudioSource(ABC):
+    sample_rate: int          # always 2000
+    @abstractmethod
+    def read_frame(self) -> np.ndarray: ...   # float32, mono, fixed length, [-1, 1]
+    def close(self) -> None: ...
+```
+
+If adding hardware later would require editing `dsp.py`, `segment.py`, `classify.py`
+or `app.py`, the abstraction is wrong.
+
+## Fixed technical decisions
+
+| Decision | Value | Reason |
+|---|---|---|
+| Internal sample rate | 2000 Hz | CinC 2016 ships at 2 kHz; no resampling on the training path. Nyquist 1 kHz covers heart (20–200 Hz) and most lung (100–1000 Hz). |
+| Frame size | 1024 samples (~0.5 s) | Enough envelope context for beat detection, still feels real-time. |
+| Heart bandpass | 25–200 Hz, Butterworth order 4 | Below 25 Hz is handling noise and DC drift; above 200 Hz is not heart sound. |
+| Lung bandpass | 100–1000 Hz, Butterworth order 4 | Standard respiratory band. |
+| Filter application | `sosfiltfilt` offline, `sosfilt` + persistent `zi` streaming | Order-4 IIR in `ba` form is numerically unstable. SOS only. |
+| Envelope | Shannon energy, then ~50 ms moving average | Standard for PCG; suppresses low-amplitude noise better than rectification. |
+| Audio I/O | `soundfile` for files, `sounddevice` for mic | `sounddevice`'s callback API maps cleanly onto `read_frame`. |
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`sounddevice` additionally needs the PortAudio system library (`libportaudio2` on
+Debian/Ubuntu, `brew install portaudio` on macOS). It is imported lazily, so file
+playback works without it.
+
+Verify the audio I/O path end to end:
+
+```bash
+python tools/check_io.py
+```
+
+This synthesises a phonocardiogram-like WAV at a known heart rate, writes it at
+2000 Hz, reads it back, asserts the round trip is sample-accurate, and plots it to
+`out/check_io.png`. It exists so that a filter or I/O bug surfaces at hour 0 rather
+than hour 4, and so the pipeline has a ground-truth signal to test against.
+
+## Data
+
+Primary dataset: **PhysioNet/CinC Challenge 2016** — 3,126 labelled recordings
+(normal/abnormal) across five sub-databases collected by different teams with
+different hardware, plus per-record signal-quality annotations and manually corrected
+S1/S2 event labels.
+
+```bash
+wget -r -N -c -np https://physionet.org/files/challenge-2016/1.0.0/
+```
+
+Train on good-quality records; hold out the poor-quality records as a robustness
+check. Train across all five sub-databases, never one — they differ in hardware by
+design, and that difference is the only cheap proxy available for the domain shift to
+a contact mic.
+
+**Do not use the PASCAL dataset.** It is band-limited below 195 Hz, which removes
+components this pipeline depends on.
+
+> Liu C, Springer D, et al. *An open access database for the evaluation of heart sound
+> algorithms.* Physiol Meas. 2016;37(12):2181–2213.
+
+## Known threat: domain shift
+
+The model would train on clinical stethoscope audio and run on a cheap contact mic
+with a completely different frequency response. Mitigations, in priority order:
+
+1. Train across all five sub-databases.
+2. Augment aggressively — pink/white noise, random EQ tilt, random gain, clipping,
+   time shift.
+3. `DegradedFileSource`, an `AudioSource` wrapper applying the same corruptions.
+   Validate against it, not against clean files.
+4. Report confidence, and refuse to emit a label below threshold.
+
+The deterministic layer (beat detection, envelope, heart rate, quality indicator) is
+what carries the demo and works with no model involved. The classifier is an
+additional flag on top, not the product.

@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Data — CinC recordings are large and redistribution is governed by PhysioNet
+data/
+!data/.gitkeep
+
+# Model artefacts
+*.pt
+*.pth
+checkpoints/
+
+# Outputs
+out/
+*.png
+!docs/*.png
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

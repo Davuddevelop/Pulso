@@ -1,0 +1,15 @@
+# Baseline dependencies. Nothing is added here without asking first.
+numpy
+scipy
+soundfile
+
+# Mic capture. Requires the PortAudio system library:
+#   Debian/Ubuntu: sudo apt-get install libportaudio2
+#   macOS:         brew install portaudio
+# Imported lazily by MicSource so that file-only machines (CI, containers)
+# can still import sources.py.
+sounddevice
+
+matplotlib
+
+# torch is deliberately NOT listed. It is only installed if the CNN happens.

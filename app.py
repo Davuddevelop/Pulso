@@ -84,6 +84,7 @@ class TriageApp:
             0.02, 0.955, "", fontsize=11, fontweight="bold", va="top"
         )
         self.detail_text = self.fig.text(0.02, 0.915, "", fontsize=9, va="top", color="#444444")
+        self.action_text = self.fig.text(0.02, 0.885, "", fontsize=9, va="top", color="#333333")
         self.source_text = self.fig.text(
             0.98, 0.955, "", fontsize=9, va="top", ha="right", color="#444444"
         )
@@ -92,7 +93,7 @@ class TriageApp:
         )
 
         self.fig.canvas.mpl_connect("key_press_event", self._on_key)
-        self.fig.tight_layout(rect=(0, 0.03, 1, 0.90))
+        self.fig.tight_layout(rect=(0, 0.03, 1, 0.86))
 
     def _on_key(self, event) -> None:
         if event.key == "m":
@@ -174,6 +175,7 @@ class TriageApp:
             self.status_text.set_text("warming up...")
             self.status_text.set_color("#444444")
             self.detail_text.set_text("")
+            self.action_text.set_text("")
         else:
             self.status_text.set_text(cls.label.upper())
             self.status_text.set_color(LABEL_COLOR.get(cls.label, "#000000"))
@@ -181,6 +183,14 @@ class TriageApp:
             bpm_str = f"{result.bpm:.0f} bpm" if result and result.bpm else "-- bpm"
             s1s2_str = "" if (result and result.s1s2_confident) else "  (S1/S2 uncertain)"
             self.detail_text.set_text(f"{bpm_str}{s1s2_str}   {cls.reason}")
+
+            # action is only set on "review recommended" (see classify.py) -- a
+            # routing suggestion (when/who to see), never a diagnosis.
+            if cls.action:
+                self.action_text.set_text(f"→ {cls.action}")
+                self.action_text.set_color(LABEL_COLOR.get(cls.label, "#333333"))
+            else:
+                self.action_text.set_text("")
 
         label = self._source_label()
         if getattr(self, "_source_switch_error", None):

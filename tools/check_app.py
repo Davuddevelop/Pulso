@@ -72,6 +72,29 @@ def test_loop_advances_on_real_audio(wav_path: Path) -> None:
     check("disclaimer is present on every render", any(
         "not a medical device" in t.get_text().lower() for t in app.fig.texts
     ))
+    check("no action/routing text on a normal reading", app.action_text.get_text() == "")
+
+
+def test_review_recommended_shows_action(tmp: Path) -> None:
+    print("review recommended: routing action appears on screen, names no diagnosis")
+    fast_signal, _, _ = synth_pcg(duration_s=15.0, bpm=150.0, systole_s=0.2)
+    path = tmp / "fast.wav"
+    sf.write(path, fast_signal, SAMPLE_RATE, subtype="PCM_16")
+
+    app = TriageApp(FileSource(path, loop=True))
+    saw_review = False
+    for i in range(40):
+        app._redraw(i)
+        if app.classification and app.classification.label == "review recommended":
+            saw_review = True
+
+    check("150 bpm eventually flagged for review", saw_review)
+    check("status text shows REVIEW RECOMMENDED", app.status_text.get_text() == "REVIEW RECOMMENDED")
+    check("action text is populated", app.action_text.get_text() != "")
+    check("action text is a routing suggestion, not a diagnosis", app.action_text.get_text().startswith("→"))
+    forbidden = ["diagnos", "disease", "arrhythmia", "murmur", "cardiolog", "specialist"]
+    hit = [w for w in forbidden if w in app.action_text.get_text().lower()]
+    check("no forbidden vocabulary in the on-screen action text", not hit, f"found {hit}")
 
 
 def test_display_buffers_stay_finite(wav_path: Path) -> None:
@@ -112,6 +135,7 @@ def test_silence_shows_too_noisy(tmp: Path) -> None:
           app.classification.label == "signal too noisy", f"{app.classification}")
     check("status text shows it", app.status_text.get_text() == "SIGNAL TOO NOISY")
     check("no beats fabricated on silence", app.result is not None and len(app.result.beats) == 0)
+    check("no action/routing text on a noisy reading", app.action_text.get_text() == "")
 
 
 def test_build_app_without_mic_flag(wav_path: Path) -> None:
@@ -131,6 +155,7 @@ def main() -> int:
         test_loop_advances_on_real_audio(wav_path)
         test_display_buffers_stay_finite(wav_path)
         test_source_toggle_falls_back_gracefully(wav_path)
+        test_review_recommended_shows_action(tmp)
         test_silence_shows_too_noisy(tmp)
         test_build_app_without_mic_flag(wav_path)
 

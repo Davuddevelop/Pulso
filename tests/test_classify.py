@@ -110,22 +110,87 @@ def test_too_few_beats_skips_rhythm_check() -> None:
     check("insufficient beats for rhythm -> falls back to rate-only, normal", r.label == "normal", r.reason)
 
 
+def test_urgency_defaults_to_none() -> None:
+    print("urgency/action are None outside 'review recommended'")
+    noisy = classify(SegmentResult([], None, False, "noisy", "no signal"))
+    check("noisy -> urgency None", noisy.urgency is None)
+    check("noisy -> action None", noisy.action is None)
+
+    normal = classify(SegmentResult(s1_beats([1666] * 10), 72.0, True, "good", "ok"))
+    check("normal -> urgency None", normal.urgency is None)
+    check("normal -> action None", normal.action is None)
+
+
+def test_urgency_bands() -> None:
+    print("urgency scales with how far the reading deviates, not with a guess at cause")
+    # deviation from TYPICAL_BPM_RANGE=(50,110): 35->15 (moderate/prompt boundary),
+    # 45->5 (mild/routine), 120->10 (mild/routine), 130->20 (moderate/prompt),
+    # 150->40 (marked/urgent). Computed and verified directly against the
+    # implementation before writing these as expectations, not guessed.
+    cases = [
+        (35.0, "prompt"), (45.0, "routine"), (120.0, "routine"),
+        (130.0, "prompt"), (150.0, "urgent"),
+    ]
+    for bpm, expected in cases:
+        beats = s1_beats([int(60 / bpm * SAMPLE_RATE)] * 8)
+        r = classify(SegmentResult(beats, bpm, True, "good", "ok"))
+        check(f"{bpm:.0f} bpm -> urgency {expected!r}", r.urgency == expected, f"got {r.urgency!r}")
+        check(f"{bpm:.0f} bpm -> action text present", bool(r.action))
+
+    check("routine action mentions no urgency", "routine" in classify(
+        SegmentResult(s1_beats([int(60 / 45 * SAMPLE_RATE)] * 8), 45.0, True, "good", "ok")
+    ).action.lower())
+    check("urgent action says as soon as possible", "as soon as possible" in classify(
+        SegmentResult(s1_beats([int(60 / 150 * SAMPLE_RATE)] * 8), 150.0, True, "good", "ok")
+    ).action.lower())
+
+
+def test_combined_findings_escalate() -> None:
+    print("two simultaneous mild findings escalate past routine")
+    # 45 bpm alone is a mild rate deviation -> routine. Confirm that, then add a mild
+    # rhythm irregularity at a similarly mild-deviation rate and check it moves past
+    # routine even though neither finding alone would.
+    solo = classify(SegmentResult(
+        s1_beats([int(60 / 45 * SAMPLE_RATE)] * 8), 45.0, True, "good", "ok"
+    ))
+    check("rate deviation alone is routine", solo.urgency == "routine")
+
+    # Both a mild rate deviation and a mild rhythm irregularity at once: mean rate
+    # ~117 bpm (7 bpm past the 110 boundary, mild) with cv~0.141 (mild irregularity,
+    # 0.12-0.20 band). Values computed and verified directly before writing this test.
+    fast, slow = 880, 1170
+    intervals = [fast, slow] * 6
+    beats = s1_beats(intervals)
+    mean_bpm = 60.0 * SAMPLE_RATE / np.mean(intervals)
+    combo = classify(SegmentResult(beats, float(mean_bpm), True, "good", "ok"))
+    check("both findings triggered", combo.label == "review recommended" and ";" in combo.reason,
+          f"label={combo.label} reason={combo.reason}")
+    check("two mild findings together -> past routine", combo.urgency != "routine",
+          f"urgency={combo.urgency}, reason={combo.reason}")
+
+
 def test_never_names_a_diagnosis() -> None:
     print("vocabulary check across every reachable code path")
     forbidden = ["diagnos", "disease", "arrhythmia", "murmur", "fibrillation", "treatment",
-                 "prescri", "condition"]
+                 "prescri", "condition", "cardiolog", "pulmonolog", "specialist"]
     cases = [
         SegmentResult([], None, False, "noisy", "no heart sounds detected above the noise floor"),
         SegmentResult(s1_beats([1666] * 10), 72.0, True, "good", "ok"),
         SegmentResult(s1_beats([int(60 / 150 * SAMPLE_RATE)] * 8), 150.0, True, "good", "ok"),
         SegmentResult(s1_beats([1200, 2200] * 6), 70.6, True, "good", "ok"),
+        SegmentResult(s1_beats([int(60 / 35 * SAMPLE_RATE)] * 8), 35.0, True, "good", "ok"),
     ]
     for result in cases:
         r = classify(result)
         check(f"label {r.label!r} is one of the three allowed",
               r.label in ("normal", "review recommended", "signal too noisy"))
-        hit = [w for w in forbidden if w in r.reason.lower()]
-        check(f"no forbidden vocabulary in reason for {result.bpm}", not hit, f"found {hit}")
+        text = r.reason.lower() + " " + (r.action or "").lower()
+        hit = [w for w in forbidden if w in text]
+        check(f"no forbidden vocabulary in reason/action for {result.bpm}", not hit, f"found {hit}")
+        if r.label == "review recommended":
+            check("urgency is one of the three allowed tiers", r.urgency in ("routine", "prompt", "urgent"))
+        else:
+            check(f"urgency is None for label {r.label!r}", r.urgency is None)
 
 
 def test_integration_via_real_audio() -> None:
@@ -137,6 +202,8 @@ def test_integration_via_real_audio() -> None:
     fast_signal, _, _ = synth_pcg(duration_s=15.0, bpm=150.0, systole_s=0.2)
     r2 = classify(segment_offline(fast_signal, SAMPLE_RATE))
     check("150 bpm -> review recommended", r2.label == "review recommended", r2.reason)
+    check("150 bpm -> urgent", r2.urgency == "urgent", f"got {r2.urgency}")
+    check("150 bpm -> action present", bool(r2.action))
 
     silence = np.zeros(10 * SAMPLE_RATE, dtype=np.float32)
     r3 = classify(segment_offline(silence, SAMPLE_RATE))
@@ -150,6 +217,9 @@ def main() -> int:
         test_rate_out_of_range,
         test_irregular_rhythm,
         test_too_few_beats_skips_rhythm_check,
+        test_urgency_defaults_to_none,
+        test_urgency_bands,
+        test_combined_findings_escalate,
         test_never_names_a_diagnosis,
         test_integration_via_real_audio,
     ]:

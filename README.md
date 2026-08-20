@@ -112,7 +112,7 @@ No test framework, no new dependency — plain asserts, run directly:
 python tests/test_dsp.py       # 32 checks
 python tests/test_sources.py   # 28 checks
 python tests/test_segment.py   # 29 checks
-python tests/test_classify.py  # 27 checks
+python tests/test_classify.py  # 55 checks
 ```
 
 `dsp.py` is tested only on signals whose correct answer is known in advance — pure
@@ -201,6 +201,17 @@ must never be described as though it were. `ClassifyResult.confidence` is a heur
 weight, not a probability and not a measured accuracy figure; nothing has been
 evaluated against a held-out set, so nothing may be shown to a user as "N% accurate."
 
+A `review recommended` result also carries `urgency` (`routine` / `prompt` / `urgent`)
+and `action`, a plain next step such as "see a clinician within a day or two." This is
+routing, not diagnosis: the urgency tier is set purely by how far the measured rate or
+rhythm deviates from typical, and `action` always names a generic destination — "a
+clinician," "the nearest health facility" — never a specialist type, since the pipeline
+has no basis to say which kind of specialist would even be relevant. Two simultaneous
+mild findings escalate one tier past either alone, on the reasoning that concurrent
+flags are worth a sooner look even when neither looks severe by itself — that is the
+only place severity and breadth interact, and it still never asks what the findings
+might mean together.
+
 ## Running the live demo
 
 ```bash
@@ -222,7 +233,7 @@ never been watched scrolling on a real screen can still surprise you. Run it on 
 laptop before it goes in front of a judge.
 
 ```bash
-python tools/check_app.py   # 75 checks, headless
+python tools/check_app.py   # 82 checks, headless
 ```
 
 ## Known threat: domain shift

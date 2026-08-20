@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Data — never commit recordings or the CinC dataset
+data/
+*.wav
+*.mat
+*.hea
+*.zip
+
+# Models
+*.pt
+*.pth
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

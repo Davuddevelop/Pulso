@@ -1,0 +1,9 @@
+# Baseline only. No additions without raising them first (see CLAUDE.md).
+numpy
+scipy
+soundfile
+sounddevice
+matplotlib
+
+# torch is deliberately NOT listed. Add it only if the model milestone
+# (2:30-3:30) actually happens.

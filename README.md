@@ -111,6 +111,7 @@ No test framework, no new dependency — plain asserts, run directly:
 ```bash
 python tests/test_dsp.py       # 32 checks
 python tests/test_sources.py   # 28 checks
+python tests/test_segment.py   # 29 checks
 ```
 
 `dsp.py` is tested only on signals whose correct answer is known in advance — pure
@@ -151,6 +152,36 @@ components this pipeline depends on.
 
 > Liu C, Springer D, et al. *An open access database for the evaluation of heart sound
 > algorithms.* Physiol Meas. 2016;37(12):2181–2213.
+
+## Segmentation
+
+`segment.py` implements the deterministic fallback only. CinC 2016 ships manually
+corrected S1/S2 labels, which is normally reason to prefer a supervised segmenter — but
+that path needs the dataset, and PhysioNet is unreachable from this environment (see
+Data, above), so it has not been attempted.
+
+The deterministic rule: systole (S1→S2) is shorter than diastole (S2→S1) at normal
+heart rates, so the peak following the longer gap is S1. At a high enough heart rate
+that asymmetry collapses on its own — this is real physiology, not a modelling
+artefact, since diastole shortens with rate much faster than systole does — and the
+segmenter is required to notice and report "beats detected, S1/S2 uncertain" rather
+than a confident wrong label. `MIN_ASYMMETRY_RATIO` (1.15) is the gate.
+
+One deviation from the written spec, found by testing against known-answer signals
+rather than assumed: the ~200 ms refractory period named in the spec for suppressing
+double-counted ringing was measured, on this exact filter/envelope chain, to be about
+25x larger than the ringing actually is (~3.5 ms). At that size it was also swallowing
+genuine S1–S2 pairs at realistic elevated heart rates — a true pair 190 ms apart was
+collapsing into a single detection, corrupting the interval statistics and producing a
+badly wrong BPM, not just an imprecise one. It is set to 80 ms instead, still ~20x the
+measured ringing. See the comment on `REFRACTORY_S` in `segment.py`.
+
+`HeartSegmenter` (the streaming class) keeps a persistent filter delay-line across
+frames but re-runs peak-picking over a trailing buffer on every call rather than doing
+true incremental peak detection — a deliberate scope cut, not a silent one: true
+streaming peak-picking needs its own state machine to hold a candidate peak until
+enough future samples confirm it, which the hour budget did not have room for.
+Recomputing over an 8 s buffer once per UI redraw costs nothing measurable at 2 kHz.
 
 ## Known threat: domain shift
 

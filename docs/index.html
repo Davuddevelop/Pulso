@@ -75,9 +75,11 @@
 
   .wrap{ max-width:1180px; margin:0 auto; padding:0 clamp(20px,5vw,64px); }
 
-  /* chart-paper ruling — the page's structural motif, and the real ruling
-     of a physiological chart recorder: fine 20px divisions with a heavier
-     line every 5th, exactly how ECG/PCG paper is printed. */
+  /* chart-paper ruling — the real ruling of a physiological chart recorder.
+     Kept only where it's earned: behind the actual recorded envelope below.
+     Everywhere else on the page is a clean, near-solid background -- the
+     full-bleed version of this texture reads as busy noise at a glance,
+     not as the "real recorded data" signal it's meant to be. */
   .ruled{
     background-color:var(--paper);
     background-image:
@@ -173,8 +175,21 @@
   @media (max-width:900px){ .steps{ grid-template-columns:1fr 1fr; } .two{ grid-template-columns:1fr; } }
   @media (max-width:560px){ .steps{ grid-template-columns:1fr; } .step{ border-right:none; border-bottom:1px solid var(--rule); } }
 
+  /* optional deep-dive, collapsed by default so the plain-language summary
+     above it is what everyone actually reads first */
+  .techdetails{ margin-top:28px; }
+  .techdetails summary{
+    cursor:pointer; font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--ink-dim); padding:12px 0; border-top:1px solid var(--rule-strong);
+    list-style:none;
+  }
+  .techdetails summary::-webkit-details-marker{ display:none; }
+  .techdetails summary:hover{ color:var(--signal); }
+  .techdetails summary::before{ content:"+ "; color:var(--signal); }
+  .techdetails[open] summary::before{ content:"– "; }
+
   /* spec table */
-  .tscroll{ overflow-x:auto; margin-top:44px; border-top:1px solid var(--rule-strong); }
+  .tscroll{ overflow-x:auto; margin-top:8px; }
   table.spec{ width:100%; border-collapse:collapse; min-width:660px; }
   table.spec th{
     text-align:left; font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.1em; text-transform:uppercase;
@@ -220,8 +235,12 @@
   .foot .links{ display:flex; gap:22px; font-family:var(--mono); font-size:12px; letter-spacing:.04em; }
   .foot .links a{ color:var(--ink-dim); } .foot .links a:hover{ color:var(--signal); }
 
-  .reveal{ opacity:0; transform:translateY(8px); transition:opacity .5s ease, transform .5s ease; }
-  .reveal.in{ opacity:1; transform:none; }
+  /* A one-time fade-in on load -- CSS-only, no JS dependency. Content is
+     never hidden waiting on a script: if animation support or timing is
+     ever in question, worst case it just doesn't animate, it's never
+     invisible. */
+  @keyframes fadeInUp{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+  .reveal{ animation:fadeInUp .6s ease both; }
 </style>
 </head>
 <body>
@@ -237,15 +256,15 @@
   </div>
 </nav>
 
-<header class="hero ruled">
+<header class="hero">
   <div class="wrap">
     <span class="eyebrow">Auscultation triage</span>
     <h1>A reason to listen. Not a diagnosis.</h1>
-    <p class="sub">A contact microphone, a deterministic signal pipeline, and a screen
-      that says exactly one of three things — built for the community health worker
-      without a trained ear or a clinical stethoscope on hand.</p>
+    <p class="sub">A contact microphone and a screen that says exactly one of three
+      things — built for the community health worker without a trained ear or a
+      clinical stethoscope on hand.</p>
     <div class="stats">
-      <div class="stat"><b>277</b><span>Automated tests</span></div>
+      <div class="stat"><b>302</b><span>Automated tests</span></div>
       <div class="stat"><b>2000 Hz</b><span>Sample rate</span></div>
       <div class="stat"><b>3</b><span>Fixed outputs</span></div>
     </div>
@@ -256,7 +275,7 @@
 <div class="chart">
   <div class="wrap">
     <div class="chart-head">
-      <span class="live"><i></i>Recorded envelope — segment.py</span>
+      <span class="live"><i></i>A real reading</span>
       <span>9.0 s · 2000 Hz · S1 / S2 marked</span>
     </div>
     <div class="plot ruled">
@@ -316,28 +335,28 @@
     <h2 class="sec-t">A triage workflow built for the field.</h2>
     <div class="steps">
       <div class="step">
-        <div class="n">01 — Capture</div>
-        <h3>Sound sensor</h3>
-        <p>A low-cost electret microphone module picks up heart sound against the chest,
-          streamed to the laptop over USB serial at 2 kHz.</p>
+        <div class="n">01 — Listen</div>
+        <h3>A cheap microphone</h3>
+        <p>Held against the chest, it picks up the heartbeat — the same idea as a
+          stethoscope, at a fraction of the cost.</p>
       </div>
       <div class="step">
-        <div class="n">02 — Filter</div>
-        <h3>Bandpass</h3>
-        <p>A 25–200 Hz filter isolates the fundamental S1 and S2 tones and drops ambient
-          room noise. Verified on tones with a known correct answer.</p>
+        <div class="n">02 — Clean</div>
+        <h3>Cut the noise</h3>
+        <p>Background rustle and room noise get filtered out automatically, leaving just
+          the heart sound behind.</p>
       </div>
       <div class="step">
-        <div class="n">03 — Detect</div>
-        <h3>Beat detector</h3>
-        <p>Finds S1 and S2 from timing alone — systole is shorter than diastole — and says
-          so honestly when that cue collapses, instead of guessing.</p>
+        <div class="n">03 — Find</div>
+        <h3>Spot each beat</h3>
+        <p>Finds each heartbeat by its timing — and says so honestly when it isn't sure,
+          instead of guessing.</p>
       </div>
       <div class="step">
-        <div class="n">04 — Triage</div>
-        <h3>Output</h3>
-        <p>One of three words, plus a plain routing suggestion and timeframe when flagged.
-          Never a condition, never a specialist.</p>
+        <div class="n">04 — Decide</div>
+        <h3>One of three words</h3>
+        <p>Plus a plain next step when something's flagged. Never a diagnosis, never a
+          named specialist.</p>
       </div>
     </div>
   </div>
@@ -345,23 +364,29 @@
 
 <section class="reveal">
   <div class="wrap">
-    <span class="sec-k">System architecture</span>
-    <h2 class="sec-t">Engineering specifications.</h2>
-    <p class="sec-p">Two of these values differ from the original spec — both because a test
-      built on a signal with a known correct answer caught them before real audio could.</p>
-    <div class="tscroll">
-      <table class="spec">
-        <thead><tr><th>Decision</th><th>Value</th><th>Reason</th></tr></thead>
-        <tbody>
-          <tr><td class="k">Sample rate</td><td class="v">2000 Hz</td><td class="r">Matches the CinC 2016 training set exactly — zero resampling on the training path.</td></tr>
-          <tr><td class="k">Frame size</td><td class="v">1024</td><td class="r">~0.5 s of context per frame, still feels real-time.</td></tr>
-          <tr><td class="k">Heart band</td><td class="v">25–200 Hz</td><td class="r">Order 4, applied as second-order sections — the direct-form filter is numerically unstable at this order.</td></tr>
-          <tr><td class="k">Lung band</td><td class="v">100–950 Hz</td><td class="r">Changed from a spec'd 1000 Hz: that value is exactly Nyquist at 2 kHz and is not a realizable filter edge.</td></tr>
-          <tr><td class="k">Envelope</td><td class="v">Shannon energy</td><td class="r">~50 ms smoothing — suppresses low-amplitude noise better than plain rectification.</td></tr>
-          <tr><td class="k">Refractory period</td><td class="v">80 ms</td><td class="r">Changed from a spec'd 200 ms: measured against a real burst, that value suppressed genuine heartbeats.</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <span class="sec-k">Built like it has to work</span>
+    <h2 class="sec-t">Two real bugs, caught before they ever shipped.</h2>
+    <p class="sec-p">Every decision underneath is tested against signals with a known correct
+      answer — not just run once and eyeballed. Twice, that testing caught a real mistake
+      before it reached anyone: a filter setting that was mathematically impossible, and a
+      timing window sized wrong enough to silently drop real heartbeats. Both are fixed and
+      documented, not swept under the rug.</p>
+    <details class="techdetails">
+      <summary>Show the engineering specifics</summary>
+      <div class="tscroll">
+        <table class="spec">
+          <thead><tr><th>Decision</th><th>Value</th><th>Reason</th></tr></thead>
+          <tbody>
+            <tr><td class="k">Sample rate</td><td class="v">2000 Hz</td><td class="r">Matches the CinC 2016 training set exactly — zero resampling on the training path.</td></tr>
+            <tr><td class="k">Frame size</td><td class="v">1024</td><td class="r">~0.5 s of context per frame, still feels real-time.</td></tr>
+            <tr><td class="k">Heart band</td><td class="v">25–200 Hz</td><td class="r">Order 4, applied as second-order sections — the direct-form filter is numerically unstable at this order.</td></tr>
+            <tr><td class="k">Lung band</td><td class="v">100–950 Hz</td><td class="r">Changed from a spec'd 1000 Hz: that value is exactly Nyquist at 2 kHz and is not a realizable filter edge.</td></tr>
+            <tr><td class="k">Envelope</td><td class="v">Shannon energy</td><td class="r">~50 ms smoothing — suppresses low-amplitude noise better than plain rectification.</td></tr>
+            <tr><td class="k">Refractory period</td><td class="v">80 ms</td><td class="r">Changed from a spec'd 200 ms: measured against a real burst, that value suppressed genuine heartbeats.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -371,24 +396,24 @@
     <h2 class="sec-t">What's real, and what isn't, yet.</h2>
     <div class="status">
       <div class="st">
-        <div class="row"><span class="lbl">Deterministic pipeline</span><span class="tag ok">Working</span></div>
-        <h3>277 tests passing</h3>
-        <p>Capture through display, covered end to end against signals with a known correct answer.</p>
+        <div class="row"><span class="lbl">The core system</span><span class="tag ok">Working</span></div>
+        <h3>302 tests passing</h3>
+        <p>Every step tested end to end against signals with a known correct answer.</p>
       </div>
       <div class="st">
-        <div class="row"><span class="lbl">Sound-morphology classifier</span><span class="tag no">Not built</span></div>
+        <div class="row"><span class="lbl">Disease detection</span><span class="tag no">Not built</span></div>
         <h3>Never attempted</h3>
-        <p>Needs the CinC 2016 dataset. Access blocked in this environment, so it was never trained — not stubbed, simply absent.</p>
+        <p>Needs real labeled medical recordings to train on. We couldn't reach that data this weekend — not faked, simply not attempted.</p>
       </div>
       <div class="st">
-        <div class="row"><span class="lbl">Live hardware capture</span><span class="tag un">Unverified</span></div>
-        <h3>No device to confirm</h3>
-        <p>Firmware and the serial source are written and unit-tested. Neither has met the real board.</p>
+        <div class="row"><span class="lbl">Custom hardware</span><span class="tag un">Unverified</span></div>
+        <h3>No device to confirm yet</h3>
+        <p>The hardware code is written and tested on its own, but it hasn't touched a real physical device yet.</p>
       </div>
       <div class="st">
         <div class="row"><span class="lbl">On-screen live display</span><span class="tag un">Unverified</span></div>
-        <h3>Not watched running</h3>
-        <p>Passes a headless smoke test that drives the real update loop. Has never been watched scrolling on a monitor.</p>
+        <h3>Not watched running yet</h3>
+        <p>Tested thoroughly behind the scenes, but never actually watched live on a real screen.</p>
       </div>
     </div>
   </div>
@@ -418,19 +443,6 @@
     </div>
   </div>
 </footer>
-
-<script>
-  var els = document.querySelectorAll('.reveal');
-  if ('IntersectionObserver' in window) {
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
-    }, { threshold: 0.1, rootMargin: '40% 0px 40% 0px' });
-    els.forEach(function(el){ io.observe(el); });
-    setTimeout(function(){ els.forEach(function(el){ el.classList.add('in'); }); }, 2500);
-  } else {
-    els.forEach(function(el){ el.classList.add('in'); });
-  }
-</script>
 
 </body>
 </html>

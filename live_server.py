@@ -1,10 +1,14 @@
 """Live demo server: phone mic (browser) -> WebSocket -> the real triage pipeline -> dashboard.
 
-Serves four routes:
-    GET  /          the landing page (docs/index.html) -- its "Start Live Check" button
-                    links to /live.
-    GET  /live      web/live.html -- captures the browser's mic and renders the live
-                    dashboard.
+Serves five routes:
+    GET  /            the landing page (docs/index.html) -- its "Start Live Check" button
+                      links to /live.
+    GET  /pricing.html docs/pricing.html -- business model and planned pricing, linked
+                      from the landing page nav. Explicit route because Vercel's static
+                      hosting serves everything under docs/ automatically, but this
+                      aiohttp server only serves what it's told to.
+    GET  /live        web/live.html -- captures the browser's mic and renders the live
+                      dashboard.
     WS   /ws        receives raw PCM float32 chunks at whatever rate the browser's
                     AudioContext used, resamples to SAMPLE_RATE the same way FileSource
                     resamples a WAV, and streams back JSON triage results.
@@ -97,6 +101,10 @@ def _resample_chunk(chunk: np.ndarray, orig_rate: int) -> np.ndarray:
 
 async def index(_request: web.Request) -> web.FileResponse:
     return web.FileResponse(DOCS_DIR / "index.html")
+
+
+async def pricing_page(_request: web.Request) -> web.FileResponse:
+    return web.FileResponse(DOCS_DIR / "pricing.html")
 
 
 async def live_page(_request: web.Request) -> web.FileResponse:
@@ -213,6 +221,7 @@ async def sample_websocket_handler(request: web.Request) -> web.WebSocketRespons
 def build_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index)
+    app.router.add_get("/pricing.html", pricing_page)
     app.router.add_get("/live", live_page)
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/ws-sample", sample_websocket_handler)

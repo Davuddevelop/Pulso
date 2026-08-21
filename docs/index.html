@@ -103,6 +103,8 @@
     background:var(--ink); color:var(--paper); padding:9px 16px; white-space:nowrap;
   }
   .srcbtn:hover{ background:var(--signal); color:#fff; }
+  .navlink{ font-family:var(--mono); font-size:12px; font-weight:500; color:var(--ink-dim); }
+  .navlink:hover{ color:var(--signal); }
 
   /* Only reachable when this page is served by live_server.py (self-hosted +
      tunnelled for the demo) -- a dead link on the published static copy, by
@@ -229,6 +231,7 @@
     <span class="brand"><span class="mark"></span><span class="name">Pulso</span></span>
     <span class="nav-right">
       <span class="chip">Not a medical device</span>
+      <a class="navlink" href="pricing.html">Pricing</a>
       <a class="srcbtn" href="https://github.com/Davuddevelop/Pulso" target="_blank" rel="noopener">View source</a>
     </span>
   </div>

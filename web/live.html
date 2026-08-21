@@ -215,6 +215,9 @@
         nothing is recorded or stored.</p>
       <button id="startBtn" class="bigbtn">Start live check</button>
       <div id="err" class="errline"></div>
+      <p style="margin-top:22px; font-size:.88rem;">
+        <a href="#" id="sampleLink" class="back">▶ Or preview a sample reading — pre-recorded, not live</a>
+      </p>
     </div>
 
     <div id="dash">
@@ -296,6 +299,7 @@
   const startScreen = document.getElementById('start');
   const dash = document.getElementById('dash');
   const startBtn = document.getElementById('startBtn');
+  const sampleLink = document.getElementById('sampleLink');
   const stopBtn = document.getElementById('stopBtn');
   const errEl = document.getElementById('err');
   const connEl = document.getElementById('conn');
@@ -334,6 +338,7 @@
   let pendingAttachId = null;
   let btDevice = null;
   let manualEntryActive = false;
+  let sampleMode = false;
 
   function chooseRole(r) {
     role = r;
@@ -567,6 +572,27 @@
     ws.onerror = () => { connEl.textContent = 'connection error'; };
   }
 
+  async function playSample() {
+    sampleMode = true;
+    errEl.classList.remove('show');
+    sessionStartedAt = Date.now();
+    lastPayload = null;
+
+    startScreen.classList.remove('show');
+    dash.classList.add('show');
+    resizeCanvas();
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws-sample`);
+
+    ws.onopen = () => { connEl.textContent = 'sample playback — pre-recorded, not a live listen'; };
+    ws.onmessage = (evt) => {
+      try { render(JSON.parse(evt.data)); } catch (e) { /* ignore malformed frame */ }
+    };
+    ws.onclose = () => { connEl.textContent = 'disconnected'; };
+    ws.onerror = () => { connEl.textContent = 'connection error'; };
+  }
+
   function archiveSession() {
     if (role !== 'clinician' || !sessionStartedAt) return;
     const durationS = Math.max(1, Math.round((Date.now() - sessionStartedAt) / 1000));
@@ -578,6 +604,7 @@
       beats: lastPayload ? lastPayload.beats : 0,
       label: lastPayload ? lastPayload.label : 'signal too noisy',
       reason: lastPayload ? lastPayload.reason : 'stopped before a reading was established',
+      sample: !!(lastPayload && lastPayload.sample),
       attachments: [],
     });
     renderSessions();
@@ -599,7 +626,7 @@
       const meta = document.createElement('div');
       const timeEl = document.createElement('div');
       timeEl.className = 'time';
-      timeEl.textContent = `${sess.time} · ${sess.duration}s`;
+      timeEl.textContent = `${sess.sample ? '[SAMPLE] ' : ''}${sess.time} · ${sess.duration}s`;
       const sumEl = document.createElement('div');
       sumEl.className = 'sumline';
       const bpmText = sess.bpm ? `${Math.round(sess.bpm)} BPM` : '— BPM';
@@ -654,6 +681,7 @@
     if (stream) { stream.getTracks().forEach((t) => t.stop()); }
     if (ws) { try { ws.close(); } catch (e) {} }
     audioCtx = processor = micSource = gainNode = stream = ws = null;
+    sampleMode = false;
 
     dash.classList.remove('show');
     startScreen.classList.add('show');
@@ -668,6 +696,7 @@
     actionEl.textContent = '';
   }
 
+  sampleLink.addEventListener('click', (e) => { e.preventDefault(); playSample(); });
   roleClinicianBtn.addEventListener('click', () => chooseRole('clinician'));
   rolePatientBtn.addEventListener('click', () => chooseRole('patient'));
   changeRoleLink.addEventListener('click', backToRoleSelect);

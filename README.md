@@ -281,6 +281,17 @@ Only available in Chrome on Android or desktop — `navigator.bluetooth` doesn't
 Safari/iOS, so the button disables itself with an explanation rather than failing
 silently there.
 
+**Demo fallback.** Phone microphones filter out much of the low-frequency range heart
+sounds live in, so a live phone-mic reading can plausibly land on "signal too noisy"
+mid-demo — the correct behavior, but bad optics live in front of an audience. The start
+screen has a second link, "▶ Or preview a sample reading," that runs
+`web/sample_normal.wav` (a synthetic, clean 72bpm recording — the same generator
+`tests/`/`tools/` use, not a real person's recording) through the exact same
+segmenter/classifier at real-time pace over a second route, `/ws-sample`. Every payload
+from that route is tagged `"sample": true`; the UI shows "pre-recorded, not a live
+listen" for as long as it's playing, and a session a clinician archives from it is
+tagged `[SAMPLE]` in the log so it's never mistaken for a real listening.
+
 **Untested against a real phone in this environment** — no browser, microphone, or
 network peer exists in this container. `tests/test_live_server.py` drives the real
 server over a real WebSocket with synthetic audio upsampled to a realistic browser rate

@@ -1,13 +1,20 @@
 """Live demo server: phone mic (browser) -> WebSocket -> the real triage pipeline -> dashboard.
 
-Serves three routes:
-    GET  /     the landing page (docs/index.html) -- its "Start Live Check" button
-               links to /live.
-    GET  /live web/live.html -- captures the browser's mic and renders the live
-               dashboard.
-    WS   /ws   receives raw PCM float32 chunks at whatever rate the browser's
-               AudioContext used, resamples to SAMPLE_RATE the same way FileSource
-               resamples a WAV, and streams back JSON triage results.
+Serves four routes:
+    GET  /          the landing page (docs/index.html) -- its "Start Live Check" button
+                    links to /live.
+    GET  /live      web/live.html -- captures the browser's mic and renders the live
+                    dashboard.
+    WS   /ws        receives raw PCM float32 chunks at whatever rate the browser's
+                    AudioContext used, resamples to SAMPLE_RATE the same way FileSource
+                    resamples a WAV, and streams back JSON triage results.
+    WS   /ws-sample plays web/sample_normal.wav (a synthetic, clean 72bpm recording,
+                    same generator tests/tools use) through the same segmenter/
+                    classifier at real-time pace, for the "Play a sample reading"
+                    fallback -- an always-working demo path when a phone mic can't get
+                    a clean signal (a real, likely failure mode: phone mics filter out
+                    the low frequencies heart sounds live in). Every payload is tagged
+                    "sample": true so the UI never confuses it with a live listen.
 
 Uses the exact same dsp/segment/classify modules as app.py -- no signal-processing
 or classification logic is duplicated here, only orchestration. The output vocabulary
@@ -51,13 +58,14 @@ from scipy.signal import resample_poly
 
 from classify import classify
 from segment import HeartSegmenter
-from sources import SAMPLE_RATE, WebSocketMicSource
+from sources import SAMPLE_RATE, FRAME_SIZE, FileSource, WebSocketMicSource
 
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 DOCS_DIR = ROOT / "docs"
 WEB_DIR = ROOT / "web"
+SAMPLE_WAV = WEB_DIR / "sample_normal.wav"
 
 # Sanity bound on the handshake's declared sample_rate -- rejects a malformed or
 # hostile handshake before it reaches resample_poly with a nonsense ratio.
@@ -95,6 +103,26 @@ async def live_page(_request: web.Request) -> web.FileResponse:
     return web.FileResponse(WEB_DIR / "live.html")
 
 
+def _build_payload(segmenter: HeartSegmenter, result, cls, *, sample: bool = False) -> dict:
+    payload = {
+        "bpm": result.bpm,
+        "beats": len(result.beats),
+        "s1s2_confident": result.s1s2_confident,
+        "quality": result.quality,
+        "quality_reason": result.quality_reason,
+        "label": cls.label,
+        "reason": cls.reason,
+        "urgency": cls.urgency,
+        "action": cls.action,
+        "waveform": segmenter.raw_buffer[-SAMPLE_RATE * 4 :].tolist(),
+    }
+    if sample:
+        # Lets the client tell a pre-recorded playback apart from a live listen --
+        # never fold this into the same UI state as a real reading.
+        payload["sample"] = True
+    return payload
+
+
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(max_msg_size=1 * 1024 * 1024)
     await ws.prepare(request)
@@ -113,18 +141,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 return
             result = segmenter.push(frame)
             cls = classify(result)
-            payload = {
-                "bpm": result.bpm,
-                "beats": len(result.beats),
-                "s1s2_confident": result.s1s2_confident,
-                "quality": result.quality,
-                "quality_reason": result.quality_reason,
-                "label": cls.label,
-                "reason": cls.reason,
-                "urgency": cls.urgency,
-                "action": cls.action,
-                "waveform": segmenter.raw_buffer[-SAMPLE_RATE * 4 :].tolist(),
-            }
+            payload = _build_payload(segmenter, result, cls)
             if not ws.closed:
                 await ws.send_json(payload)
             await asyncio.sleep(RESULT_INTERVAL_S)
@@ -163,11 +180,42 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def sample_websocket_handler(request: web.Request) -> web.WebSocketResponse:
+    """Plays SAMPLE_WAV through the real segmenter/classifier at real-time pace.
+
+    No audio comes from the client at all here -- connecting is the only signal
+    needed. Paced with an explicit sleep because FileSource.read_frame() returns
+    instantly (it's not real hardware); without the sleep this would blast through
+    the whole file and flood the client in well under a second.
+    """
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    source = FileSource(SAMPLE_WAV, loop=True)
+    segmenter = HeartSegmenter(sample_rate=SAMPLE_RATE)
+    frame_period_s = FRAME_SIZE / SAMPLE_RATE
+
+    try:
+        while not ws.closed:
+            frame = source.read_frame()
+            result = segmenter.push(frame)
+            cls = classify(result)
+            await ws.send_json(_build_payload(segmenter, result, cls, sample=True))
+            await asyncio.sleep(frame_period_s)
+    except ConnectionResetError:
+        pass
+    finally:
+        source.close()
+
+    return ws
+
+
 def build_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/live", live_page)
     app.router.add_get("/ws", websocket_handler)
+    app.router.add_get("/ws-sample", sample_websocket_handler)
     return app
 
 

@@ -267,6 +267,20 @@ cloudflared tunnel --url http://localhost:8765     # or: ngrok http 8765
 Open the printed `https://...` URL on the phone (the QR code either tool prints works
 too) and tap "Start live check."
 
+`/live` opens with a role choice — **clinician** (the mic dashboard plus a running,
+in-tab session log: timestamp, BPM, triage label, an optional locally-attached file per
+listening — nothing persisted anywhere beyond that browser tab) or **patient** (the mic
+dashboard alone, unchanged). Both roles also get an optional Bluetooth panel that can
+connect a dedicated BLE heart-rate strap (Polar, Wahoo, Garmin chest straps — the
+standard Bluetooth SIG Heart Rate Service, `0x180D`). That number is kept strictly
+separate from the mic pipeline's triage output — it's a raw pulse rate, not a listening,
+and it never produces a normal/review-recommended/too-noisy label on its own. It does
+**not** work with AirPods (no heart-rate sensor exists to read) and most smartwatches
+don't broadcast this service to arbitrary web pages either; it needs a dedicated strap.
+Only available in Chrome on Android or desktop — `navigator.bluetooth` doesn't exist in
+Safari/iOS, so the button disables itself with an explanation rather than failing
+silently there.
+
 **Untested against a real phone in this environment** — no browser, microphone, or
 network peer exists in this container. `tests/test_live_server.py` drives the real
 server over a real WebSocket with synthetic audio upsampled to a realistic browser rate

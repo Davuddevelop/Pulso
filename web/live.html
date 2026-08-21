@@ -140,7 +140,15 @@
     background:transparent; color:var(--ink); border:1px solid var(--rule-strong); padding:9px 16px; cursor:pointer;
   }
   .stopbtn:hover{ border-color:var(--signal); color:var(--signal); }
+  .stopbtn:disabled{ opacity:.5; cursor:default; }
   .connlabel{ font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); }
+
+  /* ---------- bluetooth heart-rate strap (optional, reference-only) ---------- */
+  #btPanel{ display:none; margin-top:44px; }
+  #btPanel.show{ display:block; }
+  .btbox{ border:1px solid var(--rule); padding:16px 18px; margin-bottom:14px; }
+  .btbox .k{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .btbox .v{ font-family:var(--mono); font-size:1.3rem; margin-top:6px; }
 
   /* ---------- clinician session log ---------- */
   #sessionPanel{ display:none; margin-top:44px; }
@@ -228,6 +236,31 @@
       </div>
     </div>
 
+    <div id="btPanel">
+      <div class="panelhead">
+        <h2>Bluetooth heart-rate strap</h2>
+        <span class="panelnote">optional · reference only, separate from the listening result</span>
+      </div>
+      <p style="color:var(--ink-dim); font-size:.92rem; margin-bottom:14px;">Works with a dedicated Bluetooth
+        heart-rate strap or chest sensor (Polar, Wahoo, Garmin, and similar). Not AirPods — they have no heart-rate
+        sensor. Most smartwatches don't broadcast this to browsers either. This number is a raw pulse rate, not a
+        listening — it never produces a triage result on its own.</p>
+
+      <div id="btIdle">
+        <button id="btConnectBtn" class="stopbtn">Connect a Bluetooth heart-rate strap</button>
+        <p id="btErr" class="errline"></p>
+      </div>
+
+      <div id="btLive" style="display:none;">
+        <div class="btbox">
+          <div class="k" id="btDeviceName">Device</div>
+          <div id="btBpm" class="v">— BPM</div>
+        </div>
+        <p id="btRangeNote" class="reason"></p>
+        <button id="btDisconnectBtn" class="stopbtn">Disconnect</button>
+      </div>
+    </div>
+
     <div id="sessionPanel">
       <div class="panelhead">
         <h2>Session log</h2>
@@ -271,6 +304,16 @@
   const sessionList = document.getElementById('sessionList');
   const fileInput = document.getElementById('fileInput');
 
+  const btPanel = document.getElementById('btPanel');
+  const btConnectBtn = document.getElementById('btConnectBtn');
+  const btDisconnectBtn = document.getElementById('btDisconnectBtn');
+  const btIdle = document.getElementById('btIdle');
+  const btLive = document.getElementById('btLive');
+  const btErr = document.getElementById('btErr');
+  const btDeviceName = document.getElementById('btDeviceName');
+  const btBpm = document.getElementById('btBpm');
+  const btRangeNote = document.getElementById('btRangeNote');
+
   let role = null; // 'clinician' | 'patient'
   let audioCtx, processor, micSource, gainNode, stream, ws;
   let sessionStartedAt = null;
@@ -278,12 +321,14 @@
   let sessions = []; // clinician-only, in-memory for this browser tab
   let sessionCounter = 0;
   let pendingAttachId = null;
+  let btDevice = null;
 
   function chooseRole(r) {
     role = r;
     roleSelect.style.display = 'none';
     introBlock.classList.add('show');
     startScreen.classList.add('show');
+    btPanel.classList.add('show');
     roleBadge.textContent = r === 'clinician' ? 'CLINICIAN VIEW' : 'PATIENT VIEW';
     sessionPanel.classList.toggle('show', r === 'clinician');
     if (r === 'clinician') renderSessions();
@@ -292,13 +337,90 @@
   function backToRoleSelect(evt) {
     if (evt) evt.preventDefault();
     if (ws || audioCtx) stop();
+    if (btDevice) disconnectBluetooth();
     role = null;
     introBlock.classList.remove('show');
     startScreen.classList.remove('show');
     dash.classList.remove('show');
     sessionPanel.classList.remove('show');
+    btPanel.classList.remove('show');
     roleSelect.style.display = 'block';
   }
+
+  // ---- Bluetooth heart-rate strap (Web Bluetooth GATT Heart Rate Service,
+  // 0x180D) -- a raw pulse-rate reference, kept fully separate from the mic
+  // pipeline's triage output. Chrome on Android/desktop only; Safari/iOS has
+  // no Web Bluetooth support at all, which is why btConnectBtn is disabled
+  // up front rather than failing confusingly after a tap. ----
+
+  function showBtError(msg) {
+    btErr.textContent = msg;
+    btErr.classList.add('show');
+  }
+
+  if (!navigator.bluetooth) {
+    btConnectBtn.disabled = true;
+    showBtError("Bluetooth heart-rate connection isn't available in this browser. Try Chrome on Android or desktop.");
+  }
+
+  function parseHeartRate(dataView) {
+    const flags = dataView.getUint8(0);
+    const is16Bit = flags & 0x1;
+    return is16Bit ? dataView.getUint16(1, /* littleEndian */ true) : dataView.getUint8(1);
+  }
+
+  function renderBtHeartRate(hr) {
+    btBpm.textContent = `${hr} BPM`;
+    btRangeNote.textContent = (hr < 50 || hr > 110)
+      ? 'Outside the typical resting range — a listen below is worth doing.'
+      : 'Within the typical resting range.';
+  }
+
+  function onBtDisconnected() {
+    btIdle.style.display = 'block';
+    btLive.style.display = 'none';
+    btConnectBtn.disabled = false;
+    btConnectBtn.textContent = 'Connect a Bluetooth heart-rate strap';
+    btDevice = null;
+  }
+
+  async function connectBluetooth() {
+    btErr.classList.remove('show');
+    btConnectBtn.disabled = true;
+    btConnectBtn.textContent = 'Connecting…';
+    try {
+      btDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
+      const server = await btDevice.gatt.connect();
+      const service = await server.getPrimaryService('heart_rate');
+      const characteristic = await service.getCharacteristic('heart_rate_measurement');
+      await characteristic.startNotifications();
+      characteristic.addEventListener('characteristicvaluechanged', (evt) => {
+        renderBtHeartRate(parseHeartRate(evt.target.value));
+      });
+      btDevice.addEventListener('gattserverdisconnected', onBtDisconnected);
+
+      btDeviceName.textContent = btDevice.name || 'Connected device';
+      btIdle.style.display = 'none';
+      btLive.style.display = 'block';
+    } catch (e) {
+      btConnectBtn.disabled = false;
+      btConnectBtn.textContent = 'Connect a Bluetooth heart-rate strap';
+      if (e.name !== 'NotFoundError') { // NotFoundError = user cancelled the chooser, not a real error
+        showBtError(`Couldn't connect: ${e.message}`);
+      }
+    }
+  }
+
+  function disconnectBluetooth() {
+    if (btDevice && btDevice.gatt.connected) {
+      btDevice.gatt.disconnect(); // fires gattserverdisconnected -> onBtDisconnected
+    } else {
+      onBtDisconnected();
+    }
+  }
+
+  btConnectBtn.addEventListener('click', connectBluetooth);
+  btDisconnectBtn.addEventListener('click', disconnectBluetooth);
 
   function showError(msg) {
     errEl.textContent = msg;

@@ -125,6 +125,16 @@
   @media (min-width:520px){ .ritem:nth-child(2n){ border-right:1px solid var(--rule); } .ritem:nth-child(4n){ border-right:none; } }
   .ritem .k{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
   .ritem .v{ font-family:var(--mono); font-size:1.3rem; margin-top:6px; }
+
+  .pulsedot{
+    display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px;
+    background:var(--rule-strong); vertical-align:middle; position:relative; top:-2px;
+  }
+  .pulsedot.beat{ animation:pulsebeat .5s ease-out; }
+  @keyframes pulsebeat{
+    0%{ background:var(--signal); transform:scale(1.6); }
+    100%{ background:var(--rule-strong); transform:scale(1); }
+  }
   .v.status-normal, .status-normal{ color:var(--ink); }
   .v.status-review, .status-review{ color:var(--signal); }
   .v.status-noisy, .status-noisy{ color:var(--warn); }
@@ -225,7 +235,7 @@
       <div class="plotbox"><canvas id="wave"></canvas></div>
 
       <div class="readout">
-        <div class="ritem"><div class="k">Heart rate</div><div id="rBpm" class="v">— BPM</div></div>
+        <div class="ritem"><div class="k">Heart rate</div><div class="v"><span id="beatPulse" class="pulsedot"></span><span id="rBpm">— BPM</span></div></div>
         <div class="ritem"><div class="k">Beats detected</div><div id="rBeats" class="v">0</div></div>
         <div class="ritem"><div class="k">S1 / S2</div><div id="rConf" class="v">—</div></div>
         <div class="ritem"><div class="k">Triage output</div><div id="rLabel" class="v">warming up</div></div>
@@ -313,6 +323,7 @@
   const rLabel = document.getElementById('rLabel');
   const reasonEl = document.getElementById('reason');
   const actionEl = document.getElementById('action');
+  const beatPulse = document.getElementById('beatPulse');
 
   const sessionPanel = document.getElementById('sessionPanel');
   const sessionList = document.getElementById('sessionList');
@@ -340,6 +351,17 @@
   let btDevice = null;
   let manualEntryActive = false;
   let sampleMode = false;
+  let warmupUntil = 0;   // Date.now() timestamp -- readout stays at its idle state until this passes
+  let prevBeatsTotal = 0;
+  let sampleCompleted = false;
+
+  const WARMUP_MS = 1500; // same pre-roll on both live and sample so they feel like one product
+
+  function pulseBeat() {
+    beatPulse.classList.remove('beat');
+    void beatPulse.offsetWidth; // force reflow so the animation can retrigger on back-to-back beats
+    beatPulse.classList.add('beat');
+  }
 
   function chooseRole(r) {
     role = r;
@@ -498,8 +520,17 @@
   function render(payload) {
     lastPayload = payload;
 
+    // Keep the idle "warming up" readout on screen for the first WARMUP_MS after
+    // start, on both live and sample -- one consistent pre-roll instead of numbers
+    // snapping in the instant a connection opens.
+    if (Date.now() < warmupUntil) return;
+
+    const beatsTotal = payload.beats_total ?? payload.beats ?? 0;
+    if (beatsTotal > prevBeatsTotal) pulseBeat();
+    prevBeatsTotal = beatsTotal;
+
     rBpm.textContent = payload.bpm ? `${Math.round(payload.bpm)} BPM` : '— BPM';
-    rBeats.textContent = String(payload.beats ?? 0);
+    rBeats.textContent = String(beatsTotal);
     rConf.textContent = payload.s1s2_confident ? 'Confident' : 'Uncertain';
 
     const label = (payload.label || 'warming up').toUpperCase();
@@ -518,6 +549,11 @@
     }
 
     drawWave(payload.waveform);
+
+    if (payload.complete) {
+      sampleCompleted = true;
+      connEl.textContent = 'sample complete — press ▶ to replay';
+    }
   }
 
   async function start() {
@@ -541,6 +577,9 @@
     resizeCanvas();
     sessionStartedAt = Date.now();
     lastPayload = null;
+    warmupUntil = Date.now() + WARMUP_MS;
+    prevBeatsTotal = 0;
+    sampleCompleted = false;
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     micSource = audioCtx.createMediaStreamSource(stream);
@@ -569,7 +608,7 @@
     ws.onmessage = (evt) => {
       try { render(JSON.parse(evt.data)); } catch (e) { /* ignore malformed frame */ }
     };
-    ws.onclose = () => { connEl.textContent = 'disconnected'; };
+    ws.onclose = () => { if (!sampleCompleted) connEl.textContent = 'disconnected'; };
     ws.onerror = () => { connEl.textContent = 'connection error'; };
   }
 
@@ -578,6 +617,9 @@
     errEl.classList.remove('show');
     sessionStartedAt = Date.now();
     lastPayload = null;
+    warmupUntil = Date.now() + WARMUP_MS;
+    prevBeatsTotal = 0;
+    sampleCompleted = false;
 
     startScreen.classList.remove('show');
     dash.classList.add('show');
@@ -590,7 +632,7 @@
     ws.onmessage = (evt) => {
       try { render(JSON.parse(evt.data)); } catch (e) { /* ignore malformed frame */ }
     };
-    ws.onclose = () => { connEl.textContent = 'disconnected'; };
+    ws.onclose = () => { if (!sampleCompleted) connEl.textContent = 'disconnected'; };
     ws.onerror = () => { connEl.textContent = 'connection error'; };
   }
 
@@ -602,7 +644,7 @@
       time: new Date(sessionStartedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       duration: durationS,
       bpm: lastPayload ? lastPayload.bpm : null,
-      beats: lastPayload ? lastPayload.beats : 0,
+      beats: lastPayload ? (lastPayload.beats_total ?? lastPayload.beats) : 0,
       label: lastPayload ? lastPayload.label : 'signal too noisy',
       reason: lastPayload ? lastPayload.reason : 'stopped before a reading was established',
       sample: !!(lastPayload && lastPayload.sample),
@@ -683,6 +725,9 @@
     if (ws) { try { ws.close(); } catch (e) {} }
     audioCtx = processor = micSource = gainNode = stream = ws = null;
     sampleMode = false;
+    warmupUntil = 0;
+    prevBeatsTotal = 0;
+    sampleCompleted = false;
 
     dash.classList.remove('show');
     startScreen.classList.add('show');

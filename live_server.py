@@ -111,10 +111,26 @@ async def live_page(_request: web.Request) -> web.FileResponse:
     return web.FileResponse(WEB_DIR / "live.html")
 
 
-def _build_payload(segmenter: HeartSegmenter, result, cls, *, sample: bool = False) -> dict:
+def _count_new_beats(beats, last_idx: int) -> tuple[int, int]:
+    """How many of `beats` are genuinely new since the last push, by absolute sample index.
+
+    HeartSegmenter recomputes beats over a trailing window on every push, so the same
+    beat reappears in several consecutive results as the window slides past it -- a
+    naive `len(result.beats)` is a windowed snapshot, not a running total, and visibly
+    jumps around rather than counting up. Comparing against the highest sample_idx
+    already counted gives a real cumulative count that can only grow.
+    """
+    if not beats:
+        return 0, last_idx
+    new_count = sum(1 for b in beats if b.sample_idx > last_idx)
+    return new_count, max(b.sample_idx for b in beats)
+
+
+def _build_payload(segmenter: HeartSegmenter, result, cls, *, beats_total: int, sample: bool = False) -> dict:
     payload = {
         "bpm": result.bpm,
         "beats": len(result.beats),
+        "beats_total": beats_total,
         "s1s2_confident": result.s1s2_confident,
         "quality": result.quality,
         "quality_reason": result.quality_reason,
@@ -141,6 +157,8 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
     async def process_loop() -> None:
         loop = asyncio.get_event_loop()
+        beats_total = 0
+        last_beat_idx = -1
         while not ws.closed:
             try:
                 frame = await loop.run_in_executor(None, source.read_frame)
@@ -149,7 +167,9 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 return
             result = segmenter.push(frame)
             cls = classify(result)
-            payload = _build_payload(segmenter, result, cls)
+            new_count, last_beat_idx = _count_new_beats(result.beats, last_beat_idx)
+            beats_total += new_count
+            payload = _build_payload(segmenter, result, cls, beats_total=beats_total)
             if not ws.closed:
                 await ws.send_json(payload)
             await asyncio.sleep(RESULT_INTERVAL_S)
@@ -195,21 +215,43 @@ async def sample_websocket_handler(request: web.Request) -> web.WebSocketRespons
     needed. Paced with an explicit sleep because FileSource.read_frame() returns
     instantly (it's not real hardware); without the sleep this would blast through
     the whole file and flood the client in well under a second.
+
+    Plays the recording once, not on a loop -- looping forever meant the demo never
+    reached a conclusion and could restart mid-word during a pitch. The final payload
+    is tagged "complete" so the client can show a clean end state instead of an
+    unexplained disconnect.
     """
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    source = FileSource(SAMPLE_WAV, loop=True)
+    source = FileSource(SAMPLE_WAV, loop=False)
     segmenter = HeartSegmenter(sample_rate=SAMPLE_RATE)
     frame_period_s = FRAME_SIZE / SAMPLE_RATE
+    beats_total = 0
+    last_beat_idx = -1
+
+    last_payload = None
 
     try:
         while not ws.closed:
-            frame = source.read_frame()
+            try:
+                frame = source.read_frame()
+            except StopIteration:
+                break
             result = segmenter.push(frame)
             cls = classify(result)
-            await ws.send_json(_build_payload(segmenter, result, cls, sample=True))
+            new_count, last_beat_idx = _count_new_beats(result.beats, last_beat_idx)
+            beats_total += new_count
+            last_payload = _build_payload(segmenter, result, cls, beats_total=beats_total, sample=True)
+            await ws.send_json(last_payload)
             await asyncio.sleep(frame_period_s)
+        else:
+            # Loop only exited because the client disconnected, not because the
+            # recording finished -- nothing left to tell them.
+            last_payload = None
+
+        if last_payload is not None and not ws.closed:
+            await ws.send_json({**last_payload, "complete": True})
     except ConnectionResetError:
         pass
     finally:

@@ -111,19 +111,42 @@ async def live_page(_request: web.Request) -> web.FileResponse:
     return web.FileResponse(WEB_DIR / "live.html")
 
 
-def _count_new_beats(beats, last_idx: int) -> tuple[int, int]:
-    """How many of `beats` are genuinely new since the last push, by absolute sample index.
+class BeatCounter:
+    """Counts real heartbeat cycles, not raw sound events, and only ever grows.
 
-    HeartSegmenter recomputes beats over a trailing window on every push, so the same
-    beat reappears in several consecutive results as the window slides past it -- a
-    naive `len(result.beats)` is a windowed snapshot, not a running total, and visibly
-    jumps around rather than counting up. Comparing against the highest sample_idx
-    already counted gives a real cumulative count that can only grow.
+    Each cardiac cycle produces two sound events -- S1 ("lub") then S2 ("dub") --
+    so counting every labelled peak (the old approach) climbed by ~2 per heartbeat
+    and didn't read as a natural 1, 2, 3, 4 count. One S1 is one cycle, so only S1
+    increments the total; its paired S2 is the second half of a cycle already
+    counted. When S1/S2 can't be confidently told apart, segment.py labels every
+    peak "uncertain" and estimates BPM by assuming they alternate 1:1 with a cycle
+    (see _estimate_bpm) -- this counter makes the same assumption, so every second
+    new uncertain peak completes a cycle.
+
+    HeartSegmenter recomputes beats over a trailing window on every push, so the
+    same beat reappears in several consecutive results as the window slides past
+    it. Tracking the highest sample_idx already counted keeps each real beat
+    counted exactly once, regardless of how many windows it appears in.
     """
-    if not beats:
-        return 0, last_idx
-    new_count = sum(1 for b in beats if b.sample_idx > last_idx)
-    return new_count, max(b.sample_idx for b in beats)
+
+    def __init__(self) -> None:
+        self.total = 0
+        self._last_idx = -1
+        self._uncertain_carry = False
+
+    def update(self, beats) -> int:
+        new_beats = [b for b in beats if b.sample_idx > self._last_idx]
+        if beats:
+            self._last_idx = max(b.sample_idx for b in beats)
+        for b in new_beats:
+            if b.kind == "S1":
+                self.total += 1
+            elif b.kind == "uncertain":
+                if self._uncertain_carry:
+                    self.total += 1
+                self._uncertain_carry = not self._uncertain_carry
+            # S2 isn't counted -- it's the second half of a cycle S1 already counted.
+        return self.total
 
 
 def _build_payload(segmenter: HeartSegmenter, result, cls, *, beats_total: int, sample: bool = False) -> dict:
@@ -157,8 +180,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
     async def process_loop() -> None:
         loop = asyncio.get_event_loop()
-        beats_total = 0
-        last_beat_idx = -1
+        beat_counter = BeatCounter()
         while not ws.closed:
             try:
                 frame = await loop.run_in_executor(None, source.read_frame)
@@ -167,8 +189,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 return
             result = segmenter.push(frame)
             cls = classify(result)
-            new_count, last_beat_idx = _count_new_beats(result.beats, last_beat_idx)
-            beats_total += new_count
+            beats_total = beat_counter.update(result.beats)
             payload = _build_payload(segmenter, result, cls, beats_total=beats_total)
             if not ws.closed:
                 await ws.send_json(payload)
@@ -227,8 +248,7 @@ async def sample_websocket_handler(request: web.Request) -> web.WebSocketRespons
     source = FileSource(SAMPLE_WAV, loop=False)
     segmenter = HeartSegmenter(sample_rate=SAMPLE_RATE)
     frame_period_s = FRAME_SIZE / SAMPLE_RATE
-    beats_total = 0
-    last_beat_idx = -1
+    beat_counter = BeatCounter()
 
     last_payload = None
 
@@ -240,8 +260,7 @@ async def sample_websocket_handler(request: web.Request) -> web.WebSocketRespons
                 break
             result = segmenter.push(frame)
             cls = classify(result)
-            new_count, last_beat_idx = _count_new_beats(result.beats, last_beat_idx)
-            beats_total += new_count
+            beats_total = beat_counter.update(result.beats)
             last_payload = _build_payload(segmenter, result, cls, beats_total=beats_total, sample=True)
             await ws.send_json(last_payload)
             await asyncio.sleep(frame_period_s)

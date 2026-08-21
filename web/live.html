@@ -183,6 +183,30 @@
     margin-top:40px; padding-top:20px; border-top:1px solid var(--rule);
     font-family:var(--mono); font-size:11.5px; letter-spacing:.03em; color:var(--warn); text-align:center;
   }
+
+  /* ---------- quick questions + report (sample flow only) ---------- */
+  #questionsPanel{ display:none; }
+  #questionsPanel.show{ display:block; }
+  .qblock{ display:none; }
+  .qblock.show{ display:block; }
+  .qtext{ font-family:var(--serif); font-size:clamp(1.2rem,3vw,1.5rem); color:var(--ink); margin:0 auto 26px; max-width:32ch; }
+  .qbtn{ width:130px; margin:0 8px; }
+
+  #reportPanel{ display:none; text-align:left; }
+  #reportPanel.show{ display:block; }
+  #reportPanel h1{ font-size:clamp(1.5rem,4vw,2rem); }
+  .reportnote{ margin-top:10px; color:var(--ink-dim); font-size:.92rem; max-width:56ch; line-height:1.55; }
+  .reportreadout{ margin-top:24px; display:grid; grid-template-columns:repeat(2,1fr); border:1px solid var(--rule); }
+  .reportreadout .ritem:last-child{ grid-column:1 / -1; border-right:none; }
+  @media (min-width:520px){
+    .reportreadout{ grid-template-columns:repeat(3,1fr); }
+    .reportreadout .ritem:last-child{ grid-column:auto; border-right:1px solid var(--rule); }
+    .reportreadout .ritem:nth-child(3n){ border-right:none; }
+  }
+  .reportanswers{ margin-top:18px; border:1px solid var(--rule); border-top:none; }
+  .aritem{ padding:14px 18px; border-top:1px solid var(--rule); display:flex; justify-content:space-between; gap:12px; font-size:.94rem; }
+  .aritem .aq{ color:var(--ink-dim); }
+  .aritem .av{ font-family:var(--mono); font-weight:600; }
 </style>
 </head>
 <body>
@@ -247,6 +271,39 @@
       <div class="controls">
         <button id="stopBtn" class="stopbtn">Stop</button>
         <span id="conn" class="connlabel"></span>
+      </div>
+    </div>
+
+    <div id="questionsPanel" class="startscreen">
+      <h1 style="font-size:clamp(1.5rem,4vw,2rem); margin-bottom:22px;">Two quick questions</h1>
+      <div id="q1" class="qblock show">
+        <p class="qtext">Are you having chest pain or pressure right now?</p>
+        <button class="bigbtn secondary qbtn" data-q="chestPain" data-a="yes">Yes</button>
+        <button class="bigbtn secondary qbtn" data-q="chestPain" data-a="no">No</button>
+      </div>
+      <div id="q2" class="qblock">
+        <p class="qtext">Are you short of breath or having trouble breathing?</p>
+        <button class="bigbtn secondary qbtn" data-q="breathless" data-a="yes">Yes</button>
+        <button class="bigbtn secondary qbtn" data-q="breathless" data-a="no">No</button>
+      </div>
+    </div>
+
+    <div id="reportPanel">
+      <h1>Your report</h1>
+      <p class="reportnote" id="reportNote"></p>
+      <div class="reportreadout">
+        <div class="ritem"><div class="k">Rate</div><div id="repBpm" class="v">— BPM</div></div>
+        <div class="ritem"><div class="k">Beats detected</div><div id="repBeats" class="v">0</div></div>
+        <div class="ritem"><div class="k">Result</div><div id="repLabel" class="v">—</div></div>
+      </div>
+      <p id="repReason" class="reason"></p>
+      <p id="repAction" class="action"></p>
+      <div class="reportanswers">
+        <div class="aritem"><span class="aq">Chest pain or pressure</span><span id="repQ1" class="av">—</span></div>
+        <div class="aritem"><span class="aq">Short of breath</span><span id="repQ2" class="av">—</span></div>
+      </div>
+      <div class="controls">
+        <button id="reportRestartBtn" class="stopbtn">Start over</button>
       </div>
     </div>
 
@@ -325,6 +382,20 @@
   const actionEl = document.getElementById('action');
   const beatPulse = document.getElementById('beatPulse');
 
+  const questionsPanel = document.getElementById('questionsPanel');
+  const q1Block = document.getElementById('q1');
+  const q2Block = document.getElementById('q2');
+  const reportPanel = document.getElementById('reportPanel');
+  const reportNote = document.getElementById('reportNote');
+  const repBpm = document.getElementById('repBpm');
+  const repBeats = document.getElementById('repBeats');
+  const repLabel = document.getElementById('repLabel');
+  const repReason = document.getElementById('repReason');
+  const repAction = document.getElementById('repAction');
+  const repQ1 = document.getElementById('repQ1');
+  const repQ2 = document.getElementById('repQ2');
+  const reportRestartBtn = document.getElementById('reportRestartBtn');
+
   const sessionPanel = document.getElementById('sessionPanel');
   const sessionList = document.getElementById('sessionList');
   const fileInput = document.getElementById('fileInput');
@@ -354,8 +425,11 @@
   let warmupUntil = 0;   // Date.now() timestamp -- readout stays at its idle state until this passes
   let prevBeatsTotal = 0;
   let sampleCompleted = false;
+  let sampleCutoffTimer = null;
+  let symptomAnswers = { chestPain: null, breathless: null };
 
-  const WARMUP_MS = 1500; // same pre-roll on both live and sample so they feel like one product
+  const WARMUP_MS = 1500;    // same pre-roll on both live and sample so they feel like one product
+  const SAMPLE_COUNT_MS = 5000; // sample-only: how long it counts before moving to the questions
 
   function pulseBeat() {
     beatPulse.classList.remove('beat');
@@ -376,12 +450,14 @@
 
   function backToRoleSelect(evt) {
     if (evt) evt.preventDefault();
-    if (ws || audioCtx) stop();
+    if (ws || audioCtx || sampleCutoffTimer) stop();
     if (btDevice || manualEntryActive) disconnectBluetooth();
     role = null;
     introBlock.classList.remove('show');
     startScreen.classList.remove('show');
     dash.classList.remove('show');
+    questionsPanel.classList.remove('show');
+    reportPanel.classList.remove('show');
     sessionPanel.classList.remove('show');
     btPanel.classList.remove('show');
     roleSelect.style.display = 'block';
@@ -620,6 +696,7 @@
     warmupUntil = Date.now() + WARMUP_MS;
     prevBeatsTotal = 0;
     sampleCompleted = false;
+    symptomAnswers = { chestPain: null, breathless: null };
 
     startScreen.classList.remove('show');
     dash.classList.add('show');
@@ -634,6 +711,83 @@
     };
     ws.onclose = () => { if (!sampleCompleted) connEl.textContent = 'disconnected'; };
     ws.onerror = () => { connEl.textContent = 'connection error'; };
+
+    // Sample-only: count for a fixed window, then stop and ask two quick symptom
+    // questions instead of leaving the reading running indefinitely. Live mic
+    // checks are untouched -- this pacing only applies to the pre-recorded demo.
+    sampleCutoffTimer = setTimeout(finishSampleCount, WARMUP_MS + SAMPLE_COUNT_MS);
+  }
+
+  function finishSampleCount() {
+    sampleCutoffTimer = null;
+    if (ws) { try { ws.close(); } catch (e) {} }
+    ws = null;
+    sampleCompleted = true;
+
+    dash.classList.remove('show');
+    q1Block.classList.add('show');
+    q2Block.classList.remove('show');
+    questionsPanel.classList.add('show');
+  }
+
+  function answerQuestion(question, answer) {
+    symptomAnswers[question] = answer;
+    if (question === 'chestPain') {
+      q1Block.classList.remove('show');
+      q2Block.classList.add('show');
+    } else {
+      questionsPanel.classList.remove('show');
+      showReport();
+    }
+  }
+
+  function computeReport() {
+    const payload = lastPayload || {};
+    const chestPain = symptomAnswers.chestPain === 'yes';
+    const breathless = symptomAnswers.breathless === 'yes';
+
+    // A clean (sample) listening never overrides a reported red-flag symptom --
+    // those can only escalate the result, the same way they would for a real
+    // clinician taking a history alongside a listen.
+    if (chestPain || breathless) {
+      const parts = [];
+      if (chestPain) parts.push('chest pain or pressure');
+      if (breathless) parts.push('shortness of breath');
+      return {
+        label: 'review recommended',
+        reason: `Reported ${parts.join(' and ')} — worth a closer look regardless of the listening result.`,
+        action: 'See a clinician or the nearest health facility soon.',
+      };
+    }
+    return {
+      label: payload.label || 'signal too noisy',
+      reason: payload.reason || 'No reading was established before the count ended.',
+      action: payload.action || '',
+    };
+  }
+
+  function showReport() {
+    const payload = lastPayload || {};
+    const report = computeReport();
+
+    reportNote.textContent = 'Based on a pre-recorded sample listening — not a live reading of you — plus your answers below.';
+    repBpm.textContent = payload.bpm ? `${Math.round(payload.bpm)} BPM` : '— BPM';
+    repBeats.textContent = String(payload.beats_total ?? payload.beats ?? 0);
+    repLabel.textContent = report.label.toUpperCase();
+    repLabel.classList.remove('status-normal', 'status-review', 'status-noisy');
+    repLabel.classList.add(statusClass(report.label));
+    repReason.textContent = report.reason;
+    repAction.textContent = report.action ? `→ ${report.action}` : '';
+    repAction.classList.toggle('review', !!report.action);
+    repQ1.textContent = symptomAnswers.chestPain === 'yes' ? 'Yes' : 'No';
+    repQ2.textContent = symptomAnswers.breathless === 'yes' ? 'Yes' : 'No';
+
+    reportPanel.classList.add('show');
+  }
+
+  function restartFromReport() {
+    reportPanel.classList.remove('show');
+    stop();
   }
 
   function archiveSession() {
@@ -714,6 +868,10 @@
   });
 
   function stop() {
+    if (sampleCutoffTimer) { clearTimeout(sampleCutoffTimer); sampleCutoffTimer = null; }
+    questionsPanel.classList.remove('show');
+    reportPanel.classList.remove('show');
+
     archiveSession();
     sessionStartedAt = null;
 
@@ -748,6 +906,10 @@
   changeRoleLink.addEventListener('click', backToRoleSelect);
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
+  reportRestartBtn.addEventListener('click', restartFromReport);
+  document.querySelectorAll('.qbtn').forEach((btn) => {
+    btn.addEventListener('click', () => answerQuestion(btn.dataset.q, btn.dataset.a));
+  });
   window.addEventListener('resize', () => { if (dash.classList.contains('show')) resizeCanvas(); });
 })();
 </script>

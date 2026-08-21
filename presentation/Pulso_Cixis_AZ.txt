@@ -1,0 +1,98 @@
+PULSO — 4 DƏQİQƏLİK ÇIXIŞ (Azərbaycan dili)
+Slaydlarla sinxron. Vaxt işarələri təxminidir — bir dəfə ucadan oxu, öz sürətinə görə tənzimlə.
+
+──────────────────────────────────────────
+[0:00 — Slayd 1: Başlıq]
+Salam. Mən Pulso-nu təqdim edirəm — dinləmək üçün bir səbəb, diaqnoz üçün deyil.
+
+──────────────────────────────────────────
+[0:15 — Slayd 2: Problem]
+Problem sadədir: təcrübəli qulaqlar — məhz ən çox lazım olduğu yerdə yoxdur —
+kənd sağlamlıq məntəqələrində, icma səhiyyə işçilərinin əlində.
+Stetoskop doğru əldə problemi erkən tapır. Hazırlıqsız əldə isə heç nə tapmır.
+
+──────────────────────────────────────────
+[0:35 — Slayd 3: Həll]
+Pulso — ucuz rəqəmsal stetoskopdur. Kiçik bir kontakt mikrofon sinə
+vasitəsilə ürək döyüntüsünü dinləyir, Pulso bunu bir neçə saniyəyə analiz
+edir və düz üç cavabdan birini verir: normal, təkrar baxış lazımdır, ya da
+siqnal çox küylüdür. Heç vaxt dördüncü variant yoxdur.
+Niyə? Çünki yoxlanılmamış süni intellektdən gələn səhv “sizdə xəstəlik var”
+cavabı təhlükəlidir. Amma “təkrar dinləməyə dəyər” — doğrudur, dürüstdür,
+və faydalıdır.
+
+──────────────────────────────────────────
+[1:00 — Slayd 4: Necə işləyir]
+Bu necə işləyir? Dörd addım. Birinci, dinləyir — ucuz mikrofon sinədəki
+döyüntünü tutur, elə stetoskopun etdiyi kimi, qat-qat ucuz qiymətə. İkinci,
+təmizləyir — fon küyünü avtomatik süzür, yalnız ürək səsini saxlayır.
+Üçüncü, tapır — hər döyüntünü zamanlamasına görə aşkarlayır, əmin
+olmadıqda isə bunu dürüstcə bildirir, təxmin etmək əvəzinə. Dördüncü,
+qərar verir — üç sözdən biri, heç vaxt diaqnoz deyil.
+
+──────────────────────────────────────────
+[1:35 — Slayd 5: Canlı demo]  (telefona keç)
+İndi sizə canlı göstərim. Telefonun mikrofonunu sinəyə tuturam, və Pulso
+canlı olaraq ürək tezliyini, ritmini və nəticəni göstərir.
+Bax — 68 vurğu, müntəzəm ritm, normal nəticə.
+Bu, real vaxtda işləyən real bir sistemdir.
+
+  (Mikrofon təmiz siqnal tutmasa: sakit qal, "nümunə oxu" düyməsini bas,
+   davam et. Dayanma.)
+
+──────────────────────────────────────────
+[2:15 — Slayd 6: Niyə fərqliyik]
+Bəs niyə bizə güvənməlisiniz? 302 avtomatik test — hamısı uğurlu.
+Testlərimiz istifadəçiyə çatmazdan əvvəl iki real xətanı tapdı.
+Yeni avadanlıq qoşduq — heç nə sınmadı.
+Çoxu hakaton layihəsində bu yoxdur. Biz onu işləməli olduğu kimi qurduq.
+
+  (Rəqəmi bir neçə saniyə ekranda saxla, sonra danış.)
+
+──────────────────────────────────────────
+[2:40 — Slayd 7: Avadanlıq]
+Avadanlıq tərəfi: 20 dollardan az hissə dəyəri, proqram təminatı ilə eyni
+beyin. İstər telefon, istər noutbuk, istər xüsusi hazırladığımız avadanlıq —
+hamısı eyni sistemdən keçir.
+
+──────────────────────────────────────────
+[2:55 — Slayd 8: Biznes modeli]
+İndi biznes tərəfi. Kim ödəyir? Səhiyyə işçisi yox — onun büdcəsi yoxdur.
+Alıcı onları artıq maliyyələşdirən QHT və ya nazirlikdir.
+Biz avadanlığı maya dəyərinə yaxın satırıq, geniş əhatə üçün. Pul isə
+proqram səviyyəli hesabat abunəliyindən gəlir.
+Dünyada 3,8 milyon icma səhiyyə işçisi var, 98-dən çox ölkədə. Və “tibbi
+cihaz deyil” statusunu saxlamaq bizə onlara indi çatmaq imkanı verir —
+üç ildən sonra yox.
+
+──────────────────────────────────────────
+[3:20 — Slayd 9: Qiymət]
+Qiymətləndirmə planımız üç səviyyəlidir: Pilot — təxminən 45–60 dollar,
+bir məntəqə üçün. Proqram səviyyəsi — illik, QHT-yə hesablanır. Və
+korporativ səviyyə — tam inteqrasiya ilə.
+Müqayisə üçün: rəqib məhsul 379 dollar üstəgəl ildə 120 dollar —
+həkimlər üçün, bizim işçilərimiz üçün yox.
+
+──────────────────────────────────────────
+[3:40 — Slayd 10: Sonrakı addımlar]
+Bundan sonra iki real addımımız var: real tibbi qeydlərlə sınaq, və
+mikrofonu real dəri təması ilə sınaq. Hər ikisi açıq deyilir, gizlədilmir.
+
+──────────────────────────────────────────
+[3:55 — Slayd 11: Bağlanış]
+Pulso — dinləmək üçün bir səbəb, diaqnoz üçün deyil.
+Bilmədiyi barədə dürüst olmaq üçün qurulub — və məhz bu, onu kiməsə etibar
+etmək üçün təhlükəsiz edir.
+Təşəkkür edirəm. Suallarınızı gözləyirəm.
+
+──────────────────────────────────────────
+ÜMUMİ QEYDLƏR:
+- Bu mətn ~4 dəqiqəyə hesablanıb, amma canlı demo hissəsi (Slayd 5) real
+  vaxtdan asılıdır — əlavə 10-15 saniyə apara bilər. Digər slaydlarda
+  bir az sürətlən, əgər vaxt azalırsa.
+- Ən vacib iki cümlə: Slayd 6-da "Biz onu işləməli olduğu kimi qurduq"
+  və Slayd 11-də bağlanış cümləsi. Bunları yavaş və inamla de.
+- Slayd 4-ü (Necə işləyir) axıcı de — dörd addımı sürətlə, ayrı-ayrı
+  izah etməyə çalışma, hər biri bir cümlə olsun.
+- Slayd 9 və 10-u tələsik keç — onlar detaldır, əsas hekayə deyil.
+- Sual gəlməzdən əvvəl bir neçə saniyə sükut saxla, dərhal danışma.

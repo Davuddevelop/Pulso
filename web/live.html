@@ -49,6 +49,7 @@
     -webkit-font-smoothing:antialiased;
   }
   h1{ font-family:var(--serif); font-weight:400; margin:0; letter-spacing:-0.01em; }
+  h2{ font-family:var(--serif); font-weight:400; margin:0; letter-spacing:-0.01em; }
   p{ margin:0; }
   a{ color:var(--ink-dim); }
 
@@ -68,8 +69,17 @@
 
   main{ padding:36px 0 56px; }
 
-  .intro{ margin-bottom:26px; }
+  .intro{ margin-bottom:26px; display:none; }
+  .intro.show{ display:block; }
   .intro p{ color:var(--ink-dim); font-size:.98rem; max-width:56ch; line-height:1.55; margin-top:8px; }
+  .intro .rolerow{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+
+  /* ---------- role select ---------- */
+  #roleSelect.startscreen p{ margin-top:0; }
+  .bigbtn.secondary{ background:transparent; color:var(--ink); border:1px solid var(--rule-strong); }
+  .bigbtn.secondary:hover{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .rolebtn{ display:block; width:100%; margin-bottom:12px; }
+  .rolebtn:last-child{ margin-bottom:0; }
 
   /* ---------- start screen ---------- */
   .startscreen{
@@ -82,6 +92,8 @@
       repeating-linear-gradient(90deg, var(--grid-minor) 0 1px, transparent 1px 20px);
   }
   .startscreen p{ color:var(--ink-dim); max-width:44ch; margin:14px auto 26px; font-size:.95rem; line-height:1.55; }
+  #start{ display:none; }
+  #start.show{ display:block; }
   .bigbtn{
     font-family:var(--mono); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
     background:var(--ink); color:var(--paper); border:none; padding:16px 30px; cursor:pointer;
@@ -113,9 +125,9 @@
   @media (min-width:520px){ .ritem:nth-child(2n){ border-right:1px solid var(--rule); } .ritem:nth-child(4n){ border-right:none; } }
   .ritem .k{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
   .ritem .v{ font-family:var(--mono); font-size:1.3rem; margin-top:6px; }
-  .ritem .v.status-normal{ color:var(--ink); }
-  .ritem .v.status-review{ color:var(--signal); }
-  .ritem .v.status-noisy{ color:var(--warn); }
+  .v.status-normal, .status-normal{ color:var(--ink); }
+  .v.status-review, .status-review{ color:var(--signal); }
+  .v.status-noisy, .status-noisy{ color:var(--warn); }
 
   .reason{ margin-top:18px; font-size:.92rem; color:var(--ink-dim); min-height:1.4em; }
   .action{ margin-top:8px; font-size:.95rem; font-weight:500; min-height:1.4em; }
@@ -129,6 +141,25 @@
   }
   .stopbtn:hover{ border-color:var(--signal); color:var(--signal); }
   .connlabel{ font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); }
+
+  /* ---------- clinician session log ---------- */
+  #sessionPanel{ display:none; margin-top:44px; }
+  #sessionPanel.show{ display:block; }
+  .panelhead{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; }
+  .panelhead h2{ font-size:1.25rem; }
+  .panelnote{ font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); letter-spacing:.04em; }
+  .sessionlist{ border:1px solid var(--rule); }
+  .sessionrow{ display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; border-top:1px solid var(--rule); }
+  .sessionrow:first-child{ border-top:none; }
+  .sessionrow .time{ font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
+  .sessionrow .sumline{ margin-top:4px; font-family:var(--mono); font-size:.95rem; }
+  .attachbtn{
+    font-family:var(--mono); font-size:11px; background:transparent; border:1px solid var(--rule-strong);
+    padding:7px 11px; cursor:pointer; color:var(--ink-dim); white-space:nowrap;
+  }
+  .attachbtn:hover{ border-color:var(--signal); color:var(--signal); }
+  .attachlist{ display:flex; flex-direction:column; gap:4px; align-items:flex-end; }
+  .attachchip{ font-family:var(--mono); font-size:11px; color:var(--signal); white-space:nowrap; }
 
   .disclaimer{
     margin-top:40px; padding-top:20px; border-top:1px solid var(--rule);
@@ -150,7 +181,21 @@
 
 <main>
   <div class="wrap">
-    <div class="intro">
+
+    <div id="roleSelect" class="startscreen">
+      <h1 style="font-size:clamp(1.5rem,4vw,2rem); margin-bottom:6px;">Who's checking today?</h1>
+      <p>This only changes what's shown on screen — the audio pipeline and its three possible
+        outputs (<strong>normal</strong>, <strong>review recommended</strong>, <strong>signal too noisy</strong>)
+        never change.</p>
+      <button id="roleClinician" class="bigbtn rolebtn">I'm a clinician / health worker — review a recording</button>
+      <button id="rolePatient" class="bigbtn secondary rolebtn">I'm a patient — check if I should see a doctor</button>
+    </div>
+
+    <div class="intro" id="introBlock">
+      <div class="rolerow">
+        <span class="chip" id="roleBadge"></span>
+        <a href="#" id="changeRoleLink" class="back">← Change role</a>
+      </div>
       <h1 style="font-size:clamp(1.5rem,4vw,2rem);">Live check</h1>
       <p>Hold the phone's microphone gently against the chest or wrist, away from clothing and background noise.
         This streams audio to the same deterministic pipeline as the desktop app — it never names a condition,
@@ -183,6 +228,15 @@
       </div>
     </div>
 
+    <div id="sessionPanel">
+      <div class="panelhead">
+        <h2>Session log</h2>
+        <span class="panelnote">this browser only, not saved anywhere else</span>
+      </div>
+      <div id="sessionList" class="sessionlist"></div>
+      <input type="file" id="fileInput" style="display:none;">
+    </div>
+
     <p class="disclaimer">Not a medical device. Not for clinical use. This tool never diagnoses,
       names a condition, or reports an accuracy figure.</p>
   </div>
@@ -190,6 +244,13 @@
 
 <script>
 (() => {
+  const roleSelect = document.getElementById('roleSelect');
+  const roleClinicianBtn = document.getElementById('roleClinician');
+  const rolePatientBtn = document.getElementById('rolePatient');
+  const introBlock = document.getElementById('introBlock');
+  const roleBadge = document.getElementById('roleBadge');
+  const changeRoleLink = document.getElementById('changeRoleLink');
+
   const startScreen = document.getElementById('start');
   const dash = document.getElementById('dash');
   const startBtn = document.getElementById('startBtn');
@@ -206,7 +267,38 @@
   const reasonEl = document.getElementById('reason');
   const actionEl = document.getElementById('action');
 
+  const sessionPanel = document.getElementById('sessionPanel');
+  const sessionList = document.getElementById('sessionList');
+  const fileInput = document.getElementById('fileInput');
+
+  let role = null; // 'clinician' | 'patient'
   let audioCtx, processor, micSource, gainNode, stream, ws;
+  let sessionStartedAt = null;
+  let lastPayload = null;
+  let sessions = []; // clinician-only, in-memory for this browser tab
+  let sessionCounter = 0;
+  let pendingAttachId = null;
+
+  function chooseRole(r) {
+    role = r;
+    roleSelect.style.display = 'none';
+    introBlock.classList.add('show');
+    startScreen.classList.add('show');
+    roleBadge.textContent = r === 'clinician' ? 'CLINICIAN VIEW' : 'PATIENT VIEW';
+    sessionPanel.classList.toggle('show', r === 'clinician');
+    if (r === 'clinician') renderSessions();
+  }
+
+  function backToRoleSelect(evt) {
+    if (evt) evt.preventDefault();
+    if (ws || audioCtx) stop();
+    role = null;
+    introBlock.classList.remove('show');
+    startScreen.classList.remove('show');
+    dash.classList.remove('show');
+    sessionPanel.classList.remove('show');
+    roleSelect.style.display = 'block';
+  }
 
   function showError(msg) {
     errEl.textContent = msg;
@@ -239,7 +331,15 @@
     ctx.stroke();
   }
 
+  function statusClass(label) {
+    if (label === 'normal') return 'status-normal';
+    if (label === 'review recommended') return 'status-review';
+    return 'status-noisy';
+  }
+
   function render(payload) {
+    lastPayload = payload;
+
     rBpm.textContent = payload.bpm ? `${Math.round(payload.bpm)} BPM` : '— BPM';
     rBeats.textContent = String(payload.beats ?? 0);
     rConf.textContent = payload.s1s2_confident ? 'Confident' : 'Uncertain';
@@ -247,9 +347,7 @@
     const label = (payload.label || 'warming up').toUpperCase();
     rLabel.textContent = label;
     rLabel.classList.remove('status-normal', 'status-review', 'status-noisy');
-    if (payload.label === 'normal') rLabel.classList.add('status-normal');
-    else if (payload.label === 'review recommended') rLabel.classList.add('status-review');
-    else if (payload.label === 'signal too noisy') rLabel.classList.add('status-noisy');
+    if (payload.label) rLabel.classList.add(statusClass(payload.label));
 
     reasonEl.textContent = payload.reason || '';
 
@@ -257,9 +355,6 @@
     if (payload.action) {
       actionEl.textContent = `→ ${payload.action}`;
       actionEl.classList.add('review');
-    } else if (payload.label === 'signal too noisy') {
-      actionEl.textContent = '';
-      actionEl.classList.add('noisy');
     } else {
       actionEl.textContent = '';
     }
@@ -283,9 +378,11 @@
       return;
     }
 
-    startScreen.style.display = 'none';
+    startScreen.classList.remove('show');
     dash.classList.add('show');
     resizeCanvas();
+    sessionStartedAt = Date.now();
+    lastPayload = null;
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     micSource = audioCtx.createMediaStreamSource(stream);
@@ -302,7 +399,7 @@
       ws.send(JSON.stringify({ type: 'hello', sample_rate: audioCtx.sampleRate }));
 
       processor.onaudioprocess = (e) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
         const data = e.inputBuffer.getChannelData(0);
         ws.send(data.slice().buffer);
       };
@@ -318,16 +415,96 @@
     ws.onerror = () => { connEl.textContent = 'connection error'; };
   }
 
+  function archiveSession() {
+    if (role !== 'clinician' || !sessionStartedAt) return;
+    const durationS = Math.max(1, Math.round((Date.now() - sessionStartedAt) / 1000));
+    sessions.push({
+      id: ++sessionCounter,
+      time: new Date(sessionStartedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      duration: durationS,
+      bpm: lastPayload ? lastPayload.bpm : null,
+      beats: lastPayload ? lastPayload.beats : 0,
+      label: lastPayload ? lastPayload.label : 'signal too noisy',
+      reason: lastPayload ? lastPayload.reason : 'stopped before a reading was established',
+      attachments: [],
+    });
+    renderSessions();
+  }
+
+  function renderSessions() {
+    sessionList.innerHTML = '';
+    if (sessions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'sessionrow';
+      empty.innerHTML = '<span class="time">No listenings recorded yet this session.</span>';
+      sessionList.appendChild(empty);
+      return;
+    }
+    sessions.slice().reverse().forEach((sess) => {
+      const row = document.createElement('div');
+      row.className = 'sessionrow';
+
+      const meta = document.createElement('div');
+      const timeEl = document.createElement('div');
+      timeEl.className = 'time';
+      timeEl.textContent = `${sess.time} · ${sess.duration}s`;
+      const sumEl = document.createElement('div');
+      sumEl.className = 'sumline';
+      const bpmText = sess.bpm ? `${Math.round(sess.bpm)} BPM` : '— BPM';
+      const cls = statusClass(sess.label);
+      sumEl.innerHTML = `${bpmText} &nbsp; <span class="${cls}">${(sess.label || 'signal too noisy').toUpperCase()}</span>`;
+      meta.appendChild(timeEl);
+      meta.appendChild(sumEl);
+
+      const attachWrap = document.createElement('div');
+      attachWrap.className = 'attachlist';
+      sess.attachments.forEach((a) => {
+        const link = document.createElement('a');
+        link.className = 'attachchip';
+        link.href = a.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = `↗ ${a.name}`;
+        attachWrap.appendChild(link);
+      });
+      const btn = document.createElement('button');
+      btn.className = 'attachbtn';
+      btn.textContent = '+ Attach file';
+      btn.addEventListener('click', () => { pendingAttachId = sess.id; fileInput.click(); });
+      attachWrap.appendChild(btn);
+
+      row.appendChild(meta);
+      row.appendChild(attachWrap);
+      sessionList.appendChild(row);
+    });
+  }
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file || pendingAttachId == null) return;
+    const sess = sessions.find((s) => s.id === pendingAttachId);
+    if (sess) {
+      sess.attachments.push({ name: file.name, url: URL.createObjectURL(file) });
+      renderSessions();
+    }
+    pendingAttachId = null;
+  });
+
   function stop() {
+    archiveSession();
+    sessionStartedAt = null;
+
     if (processor) { try { processor.disconnect(); } catch (e) {} }
     if (micSource) { try { micSource.disconnect(); } catch (e) {} }
     if (gainNode) { try { gainNode.disconnect(); } catch (e) {} }
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
     if (stream) { stream.getTracks().forEach((t) => t.stop()); }
     if (ws) { try { ws.close(); } catch (e) {} }
+    audioCtx = processor = micSource = gainNode = stream = ws = null;
 
     dash.classList.remove('show');
-    startScreen.style.display = 'block';
+    startScreen.classList.add('show');
     startBtn.disabled = false;
     startBtn.textContent = 'Start live check';
     rLabel.textContent = 'warming up';
@@ -339,6 +516,9 @@
     actionEl.textContent = '';
   }
 
+  roleClinicianBtn.addEventListener('click', () => chooseRole('clinician'));
+  rolePatientBtn.addEventListener('click', () => chooseRole('patient'));
+  changeRoleLink.addEventListener('click', backToRoleSelect);
   startBtn.addEventListener('click', start);
   stopBtn.addEventListener('click', stop);
   window.addEventListener('resize', () => { if (dash.classList.contains('show')) resizeCanvas(); });

@@ -249,6 +249,15 @@
       <div id="btIdle">
         <button id="btConnectBtn" class="stopbtn">Connect a Bluetooth heart-rate strap</button>
         <p id="btErr" class="errline"></p>
+
+        <p style="margin-top:20px; color:var(--ink-dim); font-size:.92rem;">No strap on hand? If you already
+          know a resting heart rate — from a watch, a ring, a gym machine, or just counted by hand — enter it
+          directly. This is self-reported, not measured by this device, and it's labeled that way below.</p>
+        <div style="display:flex; gap:10px; margin-top:10px; align-items:center; flex-wrap:wrap;">
+          <input type="number" id="manualBpmInput" min="20" max="250" placeholder="e.g. 72" class="btbox"
+            style="width:110px; padding:10px 12px; font-family:var(--mono); font-size:1rem; color:var(--ink); background:var(--surface);">
+          <button id="manualBpmBtn" class="stopbtn">Use this number</button>
+        </div>
       </div>
 
       <div id="btLive" style="display:none;">
@@ -257,7 +266,7 @@
           <div id="btBpm" class="v">— BPM</div>
         </div>
         <p id="btRangeNote" class="reason"></p>
-        <button id="btDisconnectBtn" class="stopbtn">Disconnect</button>
+        <button id="btDisconnectBtn" class="stopbtn">Clear</button>
       </div>
     </div>
 
@@ -313,6 +322,8 @@
   const btDeviceName = document.getElementById('btDeviceName');
   const btBpm = document.getElementById('btBpm');
   const btRangeNote = document.getElementById('btRangeNote');
+  const manualBpmInput = document.getElementById('manualBpmInput');
+  const manualBpmBtn = document.getElementById('manualBpmBtn');
 
   let role = null; // 'clinician' | 'patient'
   let audioCtx, processor, micSource, gainNode, stream, ws;
@@ -322,6 +333,7 @@
   let sessionCounter = 0;
   let pendingAttachId = null;
   let btDevice = null;
+  let manualEntryActive = false;
 
   function chooseRole(r) {
     role = r;
@@ -337,7 +349,7 @@
   function backToRoleSelect(evt) {
     if (evt) evt.preventDefault();
     if (ws || audioCtx) stop();
-    if (btDevice) disconnectBluetooth();
+    if (btDevice || manualEntryActive) disconnectBluetooth();
     role = null;
     introBlock.classList.remove('show');
     startScreen.classList.remove('show');
@@ -379,9 +391,25 @@
   function onBtDisconnected() {
     btIdle.style.display = 'block';
     btLive.style.display = 'none';
-    btConnectBtn.disabled = false;
+    btConnectBtn.disabled = !navigator.bluetooth ? true : false;
     btConnectBtn.textContent = 'Connect a Bluetooth heart-rate strap';
     btDevice = null;
+    manualEntryActive = false;
+    manualBpmInput.value = '';
+  }
+
+  function useManualBpm() {
+    const hr = parseInt(manualBpmInput.value, 10);
+    if (!Number.isFinite(hr) || hr < 20 || hr > 250) {
+      showBtError('Enter a heart rate between 20 and 250.');
+      return;
+    }
+    btErr.classList.remove('show');
+    manualEntryActive = true;
+    btDeviceName.textContent = 'Self-reported — not measured by this device';
+    renderBtHeartRate(hr);
+    btIdle.style.display = 'none';
+    btLive.style.display = 'block';
   }
 
   async function connectBluetooth() {
@@ -421,6 +449,8 @@
 
   btConnectBtn.addEventListener('click', connectBluetooth);
   btDisconnectBtn.addEventListener('click', disconnectBluetooth);
+  manualBpmBtn.addEventListener('click', useManualBpm);
+  manualBpmInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') useManualBpm(); });
 
   function showError(msg) {
     errEl.textContent = msg;

@@ -16,6 +16,8 @@ abstraction is wrong and belongs back here.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from abc import ABC, abstractmethod
 from fractions import Fraction
 from pathlib import Path
@@ -373,3 +375,77 @@ class SerialMicSource(AudioSource):
         if serial_conn is not None:
             serial_conn.close()
             self._serial = None
+
+
+# ---------------------------------------------------------------------------
+# Browser mic capture (live_server.py, phone or laptop over WebSocket)
+# ---------------------------------------------------------------------------
+
+
+class WebSocketMicSource(AudioSource):
+    """Fed by an external pusher rather than pulling from a device itself.
+
+    live_server.py owns the actual WebSocket connection and the resampling
+    of whatever rate the browser's AudioContext captured at down to
+    SAMPLE_RATE (browsers cannot be relied on to give you 2000 Hz directly).
+    This class's only job is the same one MicSource's callback+deque already
+    solves for PortAudio: decouple "audio arrives in irregularly-sized
+    chunks whenever the network delivers them" from "read_frame() hands back
+    exactly frame_size samples, blocking until that many exist."
+
+    UNTESTED against a real browser/phone in this environment -- no browser
+    or network peer is available here. push()/read_frame() themselves are
+    exercised directly in tests/test_sources.py the same way FakeSerial
+    stands in for real hardware; the actual browser<->server path needs a
+    real phone before a demo.
+    """
+
+    def __init__(self, frame_size: int = FRAME_SIZE, read_timeout_s: float = 5.0) -> None:
+        self._frame_size = frame_size
+        self._read_timeout_s = read_timeout_s
+        self._buffer = np.zeros(0, dtype=np.float32)
+        self._lock = threading.Lock()
+        self._new_data = threading.Event()
+        self._closed = False
+
+    @property
+    def sample_rate(self) -> int:
+        return SAMPLE_RATE
+
+    @property
+    def frame_size(self) -> int:
+        return self._frame_size
+
+    def push(self, samples: np.ndarray) -> None:
+        """Append already-resampled float32 samples. Called from the server's
+        WebSocket receive loop, not from read_frame()'s caller."""
+        if samples.size == 0:
+            return
+        with self._lock:
+            self._buffer = np.concatenate([self._buffer, samples.astype(np.float32, copy=False)])
+        self._new_data.set()
+
+    def read_frame(self) -> np.ndarray:
+        """Block until frame_size samples have been pushed.
+
+        Raises RuntimeError (not StopIteration -- a live stream is not
+        "exhausted", it has stalled) if nothing arrives within the timeout,
+        so a dropped phone connection surfaces instead of hanging forever.
+        """
+        deadline = time.monotonic() + self._read_timeout_s
+        while True:
+            with self._lock:
+                if self._buffer.size >= self._frame_size:
+                    frame = self._buffer[: self._frame_size].copy()
+                    self._buffer = self._buffer[self._frame_size :]
+                    return np.clip(frame, -1.0, 1.0)
+                if self._closed:
+                    raise RuntimeError("WebSocketMicSource closed with no more data")
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"no audio pushed within {self._read_timeout_s}s -- stream stalled")
+            self._new_data.wait(timeout=0.05)
+            self._new_data.clear()
+
+    def close(self) -> None:
+        self._closed = True
+        self._new_data.set()

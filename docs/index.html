@@ -104,6 +104,15 @@
   }
   .srcbtn:hover{ background:var(--signal); color:#fff; }
 
+  /* Only reachable when this page is served by live_server.py (self-hosted +
+     tunnelled for the demo) -- a dead link on the published static copy, by
+     design; the live feature has no meaning without that server running. */
+  .livebtn{
+    font-family:var(--mono); font-size:13px; font-weight:600; letter-spacing:.04em;
+    background:var(--signal); color:#fff; padding:11px 20px; white-space:nowrap; display:inline-block;
+  }
+  .livebtn:hover{ opacity:.88; }
+
   /* ---------- HERO ---------- */
   .hero{ padding:clamp(64px,10vh,116px) 0 clamp(44px,6vh,72px); border-bottom:1px solid var(--rule); }
   .eyebrow{
@@ -237,6 +246,7 @@
       <div class="stat"><b>2000 Hz</b><span>Sample rate</span></div>
       <div class="stat"><b>3</b><span>Fixed outputs</span></div>
     </div>
+    <p style="margin-top:32px;"><a class="livebtn" href="/live">Start live check →</a></p>
   </div>
 </header>
 

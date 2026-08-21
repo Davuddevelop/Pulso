@@ -18,4 +18,10 @@ pyserial
 
 matplotlib
 
+# live_server.py: phone-mic-over-WebSocket demo path. New dependency, added
+# when the live-mic feature was built -- flagging it rather than adding it
+# silently. Only live_server.py imports aiohttp; sources.py/app.py/the core
+# pipeline do not depend on it.
+aiohttp
+
 # torch is deliberately NOT listed. It is only installed if the CNN happens.

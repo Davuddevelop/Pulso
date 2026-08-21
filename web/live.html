@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pulso — Live Check</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Live auscultation triage from a phone microphone. Not a medical device. Not for clinical use.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Same chart-recorder-paper tokens as docs/index.html, trimmed to what this
+     page needs, so the live demo and the pitch page read as one product. */
+  :root{
+    --paper:#F4F4F1; --surface:#FFFFFF;
+    --ink:#141619; --ink-dim:#5B6068; --ink-faint:#8E939A;
+    --rule:#DCDBD5; --rule-strong:#C3C2BA;
+    --signal:#D6360F; --signal-soft:rgba(214,54,15,0.08);
+    --grid-minor:rgba(20,22,25,0.055); --grid-major:rgba(20,22,25,0.105);
+    --warn:#9A6206; --warn-soft:rgba(154,98,6,0.10);
+    --serif:"Young Serif", Georgia, serif;
+    --sans:"Geist","Segoe UI",system-ui,sans-serif;
+    --mono:"Geist Mono",ui-monospace,"SF Mono",Consolas,monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0E0F11; --surface:#16181B;
+      --ink:#EDEEF0; --ink-dim:#9AA0A8; --ink-faint:#6B7178;
+      --rule:#262A2E; --rule-strong:#343A40;
+      --signal:#FF5A2C; --signal-soft:rgba(255,90,44,0.12);
+      --grid-minor:rgba(237,238,240,0.05); --grid-major:rgba(237,238,240,0.10);
+      --warn:#D9A036; --warn-soft:rgba(217,160,54,0.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E0F11; --surface:#16181B;
+    --ink:#EDEEF0; --ink-dim:#9AA0A8; --ink-faint:#6B7178;
+    --rule:#262A2E; --rule-strong:#343A40;
+    --signal:#FF5A2C; --signal-soft:rgba(255,90,44,0.12);
+    --grid-minor:rgba(237,238,240,0.05); --grid-major:rgba(237,238,240,0.10);
+    --warn:#D9A036; --warn-soft:rgba(217,160,54,0.12);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1{ font-family:var(--serif); font-weight:400; margin:0; letter-spacing:-0.01em; }
+  p{ margin:0; }
+  a{ color:var(--ink-dim); }
+
+  .wrap{ max-width:760px; margin:0 auto; padding:0 clamp(18px,5vw,32px); }
+
+  nav.top{ border-bottom:1px solid var(--rule); }
+  nav.top .wrap{ display:flex; align-items:center; justify-content:space-between; padding:16px clamp(18px,5vw,32px); gap:14px; }
+  .brand{ display:flex; align-items:center; gap:9px; }
+  .brand .mark{ width:10px; height:10px; background:var(--signal); border-radius:50%; flex:none; }
+  .brand .name{ font-family:var(--serif); font-size:19px; }
+  .chip{
+    font-family:var(--mono); font-size:10.5px; font-weight:500; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--ink-dim); border:1px solid var(--rule-strong); padding:5px 10px; white-space:nowrap;
+  }
+  .back{ font-family:var(--mono); font-size:12px; }
+  .back:hover{ color:var(--signal); }
+
+  main{ padding:36px 0 56px; }
+
+  .intro{ margin-bottom:26px; }
+  .intro p{ color:var(--ink-dim); font-size:.98rem; max-width:56ch; line-height:1.55; margin-top:8px; }
+
+  /* ---------- start screen ---------- */
+  .startscreen{
+    border:1px solid var(--rule); padding:clamp(32px,7vw,56px) clamp(20px,6vw,40px);
+    text-align:center; background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg,  var(--grid-major) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(90deg, var(--grid-major) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(0deg,  var(--grid-minor) 0 1px, transparent 1px 20px),
+      repeating-linear-gradient(90deg, var(--grid-minor) 0 1px, transparent 1px 20px);
+  }
+  .startscreen p{ color:var(--ink-dim); max-width:44ch; margin:14px auto 26px; font-size:.95rem; line-height:1.55; }
+  .bigbtn{
+    font-family:var(--mono); font-size:13px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+    background:var(--ink); color:var(--paper); border:none; padding:16px 30px; cursor:pointer;
+  }
+  .bigbtn:hover{ background:var(--signal); }
+  .bigbtn:disabled{ opacity:.5; cursor:default; }
+  .errline{ margin-top:16px; color:var(--warn); font-size:.9rem; display:none; }
+  .errline.show{ display:block; }
+
+  /* ---------- live dashboard ---------- */
+  #dash{ display:none; }
+  #dash.show{ display:block; }
+
+  .plotbox{
+    border:1px solid var(--rule); padding:0; overflow:hidden;
+    background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg,  var(--grid-major) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(90deg, var(--grid-major) 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(0deg,  var(--grid-minor) 0 1px, transparent 1px 20px),
+      repeating-linear-gradient(90deg, var(--grid-minor) 0 1px, transparent 1px 20px);
+  }
+  #wave{ display:block; width:100%; height:160px; }
+
+  .readout{ display:grid; grid-template-columns:repeat(2,1fr); border:1px solid var(--rule); border-top:none; }
+  @media (min-width:520px){ .readout{ grid-template-columns:repeat(4,1fr); } }
+  .ritem{ padding:16px 18px; border-right:1px solid var(--rule); border-top:1px solid var(--rule); }
+  .ritem:nth-child(2n){ border-right:none; }
+  @media (min-width:520px){ .ritem:nth-child(2n){ border-right:1px solid var(--rule); } .ritem:nth-child(4n){ border-right:none; } }
+  .ritem .k{ font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .ritem .v{ font-family:var(--mono); font-size:1.3rem; margin-top:6px; }
+  .ritem .v.status-normal{ color:var(--ink); }
+  .ritem .v.status-review{ color:var(--signal); }
+  .ritem .v.status-noisy{ color:var(--warn); }
+
+  .reason{ margin-top:18px; font-size:.92rem; color:var(--ink-dim); min-height:1.4em; }
+  .action{ margin-top:8px; font-size:.95rem; font-weight:500; min-height:1.4em; }
+  .action.review{ color:var(--signal); }
+  .action.noisy{ color:var(--warn); }
+
+  .controls{ margin-top:22px; display:flex; align-items:center; gap:14px; }
+  .stopbtn{
+    font-family:var(--mono); font-size:12px; font-weight:500; letter-spacing:.04em;
+    background:transparent; color:var(--ink); border:1px solid var(--rule-strong); padding:9px 16px; cursor:pointer;
+  }
+  .stopbtn:hover{ border-color:var(--signal); color:var(--signal); }
+  .connlabel{ font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); }
+
+  .disclaimer{
+    margin-top:40px; padding-top:20px; border-top:1px solid var(--rule);
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.03em; color:var(--warn); text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <span class="brand"><span class="mark"></span><span class="name">Pulso</span></span>
+    <span style="display:flex; align-items:center; gap:14px;">
+      <span class="chip">Not a medical device</span>
+      <a class="back" href="/">← Back</a>
+    </span>
+  </div>
+</nav>
+
+<main>
+  <div class="wrap">
+    <div class="intro">
+      <h1 style="font-size:clamp(1.5rem,4vw,2rem);">Live check</h1>
+      <p>Hold the phone's microphone gently against the chest or wrist, away from clothing and background noise.
+        This streams audio to the same deterministic pipeline as the desktop app — it never names a condition,
+        only <strong>normal</strong>, <strong>review recommended</strong>, or <strong>signal too noisy</strong>.</p>
+    </div>
+
+    <div id="start" class="startscreen">
+      <p>Your browser will ask for microphone permission. Audio is streamed for live analysis only —
+        nothing is recorded or stored.</p>
+      <button id="startBtn" class="bigbtn">Start live check</button>
+      <div id="err" class="errline"></div>
+    </div>
+
+    <div id="dash">
+      <div class="plotbox"><canvas id="wave"></canvas></div>
+
+      <div class="readout">
+        <div class="ritem"><div class="k">Heart rate</div><div id="rBpm" class="v">— BPM</div></div>
+        <div class="ritem"><div class="k">Beats detected</div><div id="rBeats" class="v">0</div></div>
+        <div class="ritem"><div class="k">S1 / S2</div><div id="rConf" class="v">—</div></div>
+        <div class="ritem"><div class="k">Triage output</div><div id="rLabel" class="v">warming up</div></div>
+      </div>
+
+      <p id="reason" class="reason"></p>
+      <p id="action" class="action"></p>
+
+      <div class="controls">
+        <button id="stopBtn" class="stopbtn">Stop</button>
+        <span id="conn" class="connlabel"></span>
+      </div>
+    </div>
+
+    <p class="disclaimer">Not a medical device. Not for clinical use. This tool never diagnoses,
+      names a condition, or reports an accuracy figure.</p>
+  </div>
+</main>
+
+<script>
+(() => {
+  const startScreen = document.getElementById('start');
+  const dash = document.getElementById('dash');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const errEl = document.getElementById('err');
+  const connEl = document.getElementById('conn');
+  const canvas = document.getElementById('wave');
+  const ctx = canvas.getContext('2d');
+
+  const rBpm = document.getElementById('rBpm');
+  const rBeats = document.getElementById('rBeats');
+  const rConf = document.getElementById('rConf');
+  const rLabel = document.getElementById('rLabel');
+  const reasonEl = document.getElementById('reason');
+  const actionEl = document.getElementById('action');
+
+  let audioCtx, processor, micSource, gainNode, stream, ws;
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.classList.add('show');
+  }
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(160 * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawWave(samples) {
+    const w = canvas.clientWidth, h = 160;
+    ctx.clearRect(0, 0, w, h);
+    if (!samples || samples.length === 0) return;
+    const mid = h / 2;
+    const styles = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = styles.getPropertyValue('--signal').trim() || '#D6360F';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    const step = samples.length / w;
+    for (let x = 0; x < w; x++) {
+      const s = samples[Math.min(samples.length - 1, Math.floor(x * step))];
+      const y = mid - s * (h * 0.42);
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  function render(payload) {
+    rBpm.textContent = payload.bpm ? `${Math.round(payload.bpm)} BPM` : '— BPM';
+    rBeats.textContent = String(payload.beats ?? 0);
+    rConf.textContent = payload.s1s2_confident ? 'Confident' : 'Uncertain';
+
+    const label = (payload.label || 'warming up').toUpperCase();
+    rLabel.textContent = label;
+    rLabel.classList.remove('status-normal', 'status-review', 'status-noisy');
+    if (payload.label === 'normal') rLabel.classList.add('status-normal');
+    else if (payload.label === 'review recommended') rLabel.classList.add('status-review');
+    else if (payload.label === 'signal too noisy') rLabel.classList.add('status-noisy');
+
+    reasonEl.textContent = payload.reason || '';
+
+    actionEl.classList.remove('review', 'noisy');
+    if (payload.action) {
+      actionEl.textContent = `→ ${payload.action}`;
+      actionEl.classList.add('review');
+    } else if (payload.label === 'signal too noisy') {
+      actionEl.textContent = '';
+      actionEl.classList.add('noisy');
+    } else {
+      actionEl.textContent = '';
+    }
+
+    drawWave(payload.waveform);
+  }
+
+  async function start() {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Connecting…';
+    errEl.classList.remove('show');
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (e) {
+      showError('Microphone permission was denied or is unavailable on this device.');
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start live check';
+      return;
+    }
+
+    startScreen.style.display = 'none';
+    dash.classList.add('show');
+    resizeCanvas();
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    micSource = audioCtx.createMediaStreamSource(stream);
+    processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    gainNode = audioCtx.createGain();
+    gainNode.gain.value = 0; // keep the graph pulling without audible mic feedback
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      connEl.textContent = 'connected';
+      ws.send(JSON.stringify({ type: 'hello', sample_rate: audioCtx.sampleRate }));
+
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const data = e.inputBuffer.getChannelData(0);
+        ws.send(data.slice().buffer);
+      };
+      micSource.connect(processor);
+      processor.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+    };
+
+    ws.onmessage = (evt) => {
+      try { render(JSON.parse(evt.data)); } catch (e) { /* ignore malformed frame */ }
+    };
+    ws.onclose = () => { connEl.textContent = 'disconnected'; };
+    ws.onerror = () => { connEl.textContent = 'connection error'; };
+  }
+
+  function stop() {
+    if (processor) { try { processor.disconnect(); } catch (e) {} }
+    if (micSource) { try { micSource.disconnect(); } catch (e) {} }
+    if (gainNode) { try { gainNode.disconnect(); } catch (e) {} }
+    if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); }
+    if (ws) { try { ws.close(); } catch (e) {} }
+
+    dash.classList.remove('show');
+    startScreen.style.display = 'block';
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start live check';
+    rLabel.textContent = 'warming up';
+    rLabel.classList.remove('status-normal', 'status-review', 'status-noisy');
+    rBpm.textContent = '— BPM';
+    rBeats.textContent = '0';
+    rConf.textContent = '—';
+    reasonEl.textContent = '';
+    actionEl.textContent = '';
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+  window.addEventListener('resize', () => { if (dash.classList.contains('show')) resizeCanvas(); });
+})();
+</script>
+
+</body>
+</html>

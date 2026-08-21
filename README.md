@@ -241,6 +241,46 @@ laptop before it goes in front of a judge.
 python tools/check_app.py   # 86 checks, headless
 ```
 
+## Live demo (phone microphone, browser)
+
+For a demo where the phone's own mic is the "stethoscope" instead of the desktop app
+reading a file or `sounddevice`: `live_server.py` runs the same `segment.py`/`classify.py`
+pipeline behind a small aiohttp server, fed by a browser page (`web/live.html`) that
+captures the phone's mic via `getUserMedia` and streams it over a WebSocket. The landing
+page (`docs/index.html`) has a "Start live check" button that links to `/live` — only
+meaningful when this server is what's actually serving the page (dead on the published
+static copy of the landing page, by design).
+
+```bash
+pip install -r requirements.txt   # now includes aiohttp
+python live_server.py             # serves on http://0.0.0.0:8765
+```
+
+Phone browsers only grant microphone access on `localhost` or a page served over
+**HTTPS** — plain `http://<laptop-ip>:8765` from another device on the WiFi will
+silently fail. In a second terminal, tunnel it:
+
+```bash
+cloudflared tunnel --url http://localhost:8765     # or: ngrok http 8765
+```
+
+Open the printed `https://...` URL on the phone (the QR code either tool prints works
+too) and tap "Start live check."
+
+**Untested against a real phone in this environment** — no browser, microphone, or
+network peer exists in this container. `tests/test_live_server.py` drives the real
+server over a real WebSocket with synthetic audio upsampled to a realistic browser rate
+(48 kHz) and confirms BPM converges, silence honestly reports "signal too noisy," and no
+forbidden vocabulary (a diagnosis, a named condition, a specialist) ever appears in a
+streamed result — that is real coverage of the server-side pipeline, but the actual
+browser round trip (mic permission prompts, per-phone `AudioContext` quirks, tunnel
+behavior) has not been watched running. Try it on a real phone before it goes in front
+of a judge.
+
+```bash
+python tests/test_live_server.py   # 17 checks, real websocket, synthetic audio
+```
+
 ## Hardware
 
 An ELEGOO Mega 2560 (ATmega2560, no wireless) plus a sensor front end became available

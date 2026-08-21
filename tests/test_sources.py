@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +32,7 @@ from sources import (  # noqa: E402
     AudioSource,
     FileSource,
     SerialMicSource,
+    WebSocketMicSource,
     parse_serial_samples,
 )
 
@@ -414,6 +417,91 @@ def test_serial_mic_source_frame_contract() -> None:
         check("raises a clear error when data runs out mid-frame", "no data from" in str(exc))
 
 
+def test_websocket_mic_source_push_and_read() -> None:
+    print("WebSocketMicSource: push then read returns exactly what was pushed")
+    src = WebSocketMicSource(read_timeout_s=1.0)
+    check("declares 2000 Hz", src.sample_rate == SAMPLE_RATE)
+
+    pushed = (np.sin(np.linspace(0, 20, FRAME_SIZE)) * 0.5).astype(np.float32)
+    src.push(pushed)
+    frame = src.read_frame()
+    assert_contract(frame, "websocket frame")
+    check("frame matches what was pushed", np.array_equal(frame, pushed))
+
+
+def test_websocket_mic_source_accumulates_partial_pushes() -> None:
+    print("WebSocketMicSource: many small pushes still assemble one correct frame")
+    src = WebSocketMicSource(read_timeout_s=1.0)
+    rng = np.random.default_rng(3)
+    whole = (rng.uniform(-0.9, 0.9, FRAME_SIZE + 37)).astype(np.float32)
+
+    # Push in small, uneven chunks -- like a browser's onaudioprocess callback
+    # firing with whatever chunk size the AudioContext gives it.
+    pos = 0
+    while pos < whole.size:
+        step = min(97, whole.size - pos)
+        src.push(whole[pos : pos + step])
+        pos += step
+
+    frame = src.read_frame()
+    assert_contract(frame, "assembled frame")
+    check("first frame_size samples match, in order", np.array_equal(frame, whole[:FRAME_SIZE]))
+
+
+def test_websocket_mic_source_blocks_until_enough_data() -> None:
+    print("WebSocketMicSource: read_frame() blocks until a delayed push arrives")
+    src = WebSocketMicSource(read_timeout_s=2.0)
+    pushed = np.zeros(FRAME_SIZE, dtype=np.float32)
+
+    def delayed_push() -> None:
+        time.sleep(0.15)
+        src.push(pushed)
+
+    t = threading.Thread(target=delayed_push)
+    start = time.monotonic()
+    t.start()
+    frame = src.read_frame()
+    elapsed = time.monotonic() - start
+    t.join()
+
+    check("actually waited for the push, not a stale buffer", elapsed >= 0.1, f"{elapsed:.3f}s")
+    assert_contract(frame, "delayed frame")
+
+
+def test_websocket_mic_source_timeout_raises_runtime_error() -> None:
+    print("WebSocketMicSource: no data at all -> RuntimeError, not a hang")
+    src = WebSocketMicSource(read_timeout_s=0.1)
+    try:
+        src.read_frame()
+        raise AssertionError("expected RuntimeError when nothing was ever pushed")
+    except RuntimeError as exc:
+        check("raises a clear stall message", "stalled" in str(exc) or "closed" in str(exc), str(exc))
+
+
+def test_websocket_mic_source_close_wakes_a_blocked_reader() -> None:
+    print("WebSocketMicSource: close() unblocks read_frame() promptly, doesn't wait for the timeout")
+    src = WebSocketMicSource(read_timeout_s=5.0)
+    result: dict[str, object] = {}
+
+    def reader() -> None:
+        try:
+            src.read_frame()
+        except RuntimeError as exc:
+            result["error"] = exc
+
+    t = threading.Thread(target=reader)
+    start = time.monotonic()
+    t.start()
+    time.sleep(0.05)
+    src.close()
+    t.join(timeout=2.0)
+    elapsed = time.monotonic() - start
+
+    check("reader thread finished", not t.is_alive())
+    check("closed promptly, well under the 5s timeout", elapsed < 1.0, f"{elapsed:.3f}s")
+    check("closing with no data raises RuntimeError", isinstance(result.get("error"), RuntimeError))
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -430,6 +518,11 @@ def main() -> int:
         test_parse_serial_samples_dropped_byte_resyncs()
         test_serial_mic_source_bad_port_raises_runtime_error()
         test_serial_mic_source_frame_contract()
+        test_websocket_mic_source_push_and_read()
+        test_websocket_mic_source_accumulates_partial_pushes()
+        test_websocket_mic_source_blocks_until_enough_data()
+        test_websocket_mic_source_timeout_raises_runtime_error()
+        test_websocket_mic_source_close_wakes_a_blocked_reader()
     print(f"\n{PASSED} checks passed.")
     return 0
 

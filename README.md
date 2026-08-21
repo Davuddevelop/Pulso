@@ -21,16 +21,20 @@ measured on a held-out set.
 
 ## Status
 
-Hardware does not exist yet. Everything runs from recorded audio files, and the
-capture layer is abstracted so that a hardware source can be dropped in later without
-touching any downstream module.
+Hardware exists now: an ELEGOO Mega 2560 and a sensor front end (see **Hardware**,
+below). `SerialMicSource` is written to the same `AudioSource` contract as the file and
+mic sources, so nothing downstream had to change — but it has not been verified against
+the real board, since this development environment has neither. Everything runs from
+recorded audio files by default, and the capture layer is abstracted so a hardware
+source drops in without touching any downstream module — which is the actual design
+claim `SerialMicSource` is meant to test, not just describe.
 
 ## Architecture
 
 Everything downstream of audio capture is ignorant of where the audio came from.
 
 ```
-sources.py    AudioSource ABC -> FileSource, MicSource, (later) ESP32Source
+sources.py    AudioSource ABC -> FileSource, MicSource, SerialMicSource
 dsp.py        pure functions, no state, no I/O -> filters, envelope
 segment.py    stateful -> beat detection, S1/S2 labelling, heart rate
 classify.py   window in -> {label, confidence} out
@@ -110,7 +114,7 @@ No test framework, no new dependency — plain asserts, run directly:
 
 ```bash
 python tests/test_dsp.py       # 32 checks
-python tests/test_sources.py   # 28 checks
+python tests/test_sources.py   # 45 checks
 python tests/test_segment.py   # 29 checks
 python tests/test_classify.py  # 55 checks
 ```
@@ -217,11 +221,12 @@ might mean together.
 ```bash
 python app.py --file out/check_io_pcm16.wav     # or any WAV
 python app.py --mic                              # live microphone
+python app.py --serial /dev/ttyUSB0 --file backup.wav   # Mega 2560, file as 'm' fallback
 ```
 
-Press `m` to switch between file playback and the microphone, `q` to quit. `app.py`
-draws exactly what `segment.py` and `classify.py` report — it contains no DSP logic of
-its own.
+Press `m` to switch between file playback and the live input (microphone or serial,
+whichever was configured), `q` to quit. `app.py` draws exactly what `segment.py` and
+`classify.py` report — it contains no DSP logic of its own.
 
 **This has not been watched running on a real screen.** This session's container has
 no display and no audio input device. What exists instead is
@@ -233,7 +238,42 @@ never been watched scrolling on a real screen can still surprise you. Run it on 
 laptop before it goes in front of a judge.
 
 ```bash
-python tools/check_app.py   # 82 checks, headless
+python tools/check_app.py   # 86 checks, headless
+```
+
+## Hardware
+
+An ELEGOO Mega 2560 (ATmega2560, no wireless) plus a sensor front end became available
+mid-hackathon — CLAUDE.md's original "hardware does not exist yet" is now out of date.
+`hardware/pulso_mic/pulso_mic.ino` samples one analog input at exactly 2 kHz on a Timer1
+CTC interrupt and streams it to the laptop over USB serial. `SerialMicSource` in
+`sources.py` decodes that stream on the host and presents it as an ordinary
+`AudioSource` — the point being that this is a real test of the "hardware drops in with
+zero downstream changes" design claim, not just a restatement of it.
+
+**What is and isn't verified.** The wire protocol's parser
+(`parse_serial_samples`) is unit-tested against synthetic byte streams, including
+deliberately corrupted ones (a dropped byte mid-stream, a truncated trailing sample) —
+real coverage of the resync logic. What is *not* verified is the firmware or the
+physical sensor, because there is no board in this environment. Run
+`tools/check_serial_source.py <port>` first — it reads a few seconds of raw ADC data,
+reports the range and DC bias, and flags the most likely wiring problems (no signal,
+signal pinned at a rail) before you touch `app.py`.
+
+**The sensor itself is not positively identified.** What's on hand includes a
+copper/orange disc wired to a small breakout board with a blue trim potentiometer —
+most likely a piezo element into a generic LM393 comparator carrier board (the same
+board template these kits reuse across sound/flame/tilt sensors), but this was not
+confirmed against a labelled part number. If it turns out to be a bare piezo disc, it
+needs a DC bias to sit mid-range in the ADC's 0–5V window instead of clipping — the
+wiring comment at the top of `pulso_mic.ino` has the two-resistor bias circuit and an
+optional diode clamp for over-voltage protection (piezo discs can spike well past 5V
+when struck). If the breakout board turns out to be labelled and already outputs a
+conditioned analog signal, skip the bias circuit entirely and wire its AO pin straight
+to A0.
+
+```bash
+python tools/check_serial_source.py /dev/ttyUSB0   # or COM3 on Windows
 ```
 
 ## Known threat: domain shift

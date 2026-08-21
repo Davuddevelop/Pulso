@@ -265,3 +265,111 @@ class ArraySource(AudioSource):
 
     read_frame = FileSource.read_frame
     reset = FileSource.reset
+
+
+# ---------------------------------------------------------------------------
+# Serial hardware capture (ELEGOO Mega 2560 running hardware/pulso_mic.ino)
+# ---------------------------------------------------------------------------
+#
+# Wire protocol (see the firmware's own docstring for the full rationale):
+# two bytes per sample, little-endian, a 10-bit ADC value so the high byte is
+# always in [0, 3]. That leaves 0xFF as a byte no real sample's high byte can
+# ever take, so the firmware periodically prefixes a sample with the 2-byte
+# marker 0xFF 0xFE, and the parser below treats any (0xFF, 0xFE) pair as an
+# unambiguous resync point -- it can never collide with real data, because no
+# legitimate high byte reaches 0xFE (254 > 3).
+
+SERIAL_SYNC = bytes([0xFF, 0xFE])
+SERIAL_BAUD = 115200
+
+
+def parse_serial_samples(buf: bytes) -> tuple[list[int], bytes]:
+    """Decode as many complete ADC samples as possible from a raw byte buffer.
+
+    Pure function, no I/O -- this is what lets the resync logic be tested
+    against synthetic corrupted streams without the real board. Self-healing:
+    a marker is always skipped, and any byte pair that cannot be a real
+    sample (high byte > 3) is treated as a misalignment and walked past one
+    byte at a time until back in step, rather than raising or losing the
+    whole buffer to one dropped byte.
+
+    Returns (samples, leftover_undecoded_bytes) -- the leftover is always
+    handed back to the next call once more bytes have arrived, never dropped.
+    """
+    samples: list[int] = []
+    i = 0
+    n = len(buf)
+    while i + 1 < n:
+        if buf[i] == 0xFF and buf[i + 1] == 0xFE:
+            i += 2
+            continue
+        low, high = buf[i], buf[i + 1]
+        if high > 3:
+            i += 1  # not a valid sample and not a marker start -- resync by one byte
+            continue
+        samples.append(low | (high << 8))
+        i += 2
+    return samples, buf[i:]
+
+
+class SerialMicSource(AudioSource):
+    """Live capture from the Mega 2560 firmware over USB serial.
+
+    UNTESTED against the real board -- there is no hardware in this build
+    environment. parse_serial_samples() is unit-tested against synthetic
+    (including deliberately corrupted) byte streams in tests/test_sources.py,
+    which is real coverage of the protocol logic, but it is not the same as
+    having actually read from the serial port. Verify with
+    tools/check_serial_source.py before wiring this into app.py.
+
+    pyserial is imported lazily, same reasoning as MicSource's sounddevice
+    import: the library is a new dependency this feature needs, and a
+    machine without it (or without the board plugged in) must still be able
+    to `import sources` and use FileSource.
+    """
+
+    def __init__(self, port: str, baud: int = SERIAL_BAUD, timeout_s: float = 2.0) -> None:
+        try:
+            import serial
+        except ImportError as exc:
+            raise RuntimeError(
+                "Serial capture needs pyserial (pip install pyserial). "
+                "File playback works without it."
+            ) from exc
+
+        try:
+            self._serial = serial.Serial(port, baud, timeout=timeout_s)
+        except serial.SerialException as exc:
+            # Wrapped into the same RuntimeError MicSource uses for its own
+            # open failures, so callers (app.py's build_app) can catch one
+            # exception type and fall back to file playback regardless of
+            # which live source failed to open.
+            raise RuntimeError(f"could not open {port}: {exc}") from exc
+
+        self._raw_buf = b""      # undecoded tail bytes (an incomplete sample/marker)
+        self._values: list[int] = []  # decoded samples not yet claimed by a frame
+
+    def read_frame(self) -> np.ndarray:
+        while len(self._values) < FRAME_SIZE:
+            chunk = self._serial.read(max(1, self._serial.in_waiting or 1))
+            if not chunk:
+                raise RuntimeError(
+                    f"no data from {self._serial.port} within {self._serial.timeout}s "
+                    "-- board unplugged, wrong port, or firmware not running"
+                )
+            self._raw_buf += chunk
+            decoded, self._raw_buf = parse_serial_samples(self._raw_buf)
+            self._values.extend(decoded)
+
+        frame_values, self._values = self._values[:FRAME_SIZE], self._values[FRAME_SIZE:]
+
+        # 10-bit ADC (0-1023) -> float32 [-1, 1]. 511.5 is the exact midpoint,
+        # so a mid-scale reading maps to 0.0 rather than a small fixed offset.
+        frame = (np.array(frame_values, dtype=np.float32) - 511.5) / 511.5
+        return np.clip(frame, -1.0, 1.0)
+
+    def close(self) -> None:
+        serial_conn = getattr(self, "_serial", None)
+        if serial_conn is not None:
+            serial_conn.close()
+            self._serial = None

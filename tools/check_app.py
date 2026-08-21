@@ -142,7 +142,22 @@ def test_build_app_without_mic_flag(wav_path: Path) -> None:
     print("build_app(file, mic=False) starts from the file, not the mic")
     app = build_app(str(wav_path), use_mic=False)
     check("starts on FileSource", isinstance(app.source, FileSource))
-    check("mic_factory is wired for later 'm' presses", app.mic_factory is not None)
+    check("live_factory is wired for later 'm' presses", app.live_factory is not None)
+
+
+def test_build_app_bad_serial_port_falls_back_to_file(wav_path: Path) -> None:
+    """No real board here -- confirms build_app degrades to file playback instead
+    of crashing when a --serial port can't be opened, same guarantee --mic already
+    has when PortAudio is missing."""
+    print("build_app(--serial <bad port>): falls back to file, doesn't crash")
+    app = build_app(str(wav_path), use_mic=False, serial_port="/dev/definitely-not-real-xyz")
+    check("falls back to FileSource", isinstance(app.source, FileSource))
+    check("live_factory still wired for a later retry via 'm'", app.live_factory is not None)
+
+    check("no stale mic_factory attribute left over from the rename", not hasattr(app, "mic_factory"))
+    for i in range(5):
+        app._redraw(i)
+    check("still renders after the fallback", app.result is not None)
 
 
 def main() -> int:
@@ -158,6 +173,7 @@ def main() -> int:
         test_review_recommended_shows_action(tmp)
         test_silence_shows_too_noisy(tmp)
         test_build_app_without_mic_flag(wav_path)
+        test_build_app_bad_serial_port_falls_back_to_file(wav_path)
 
     print(f"\n{PASSED} checks passed.")
     print("\nReminder: this is a headless smoke test. The animation has not been")

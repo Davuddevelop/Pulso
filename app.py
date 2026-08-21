@@ -52,10 +52,10 @@ class TriageApp:
     """Owns the live figure. All DSP happens in segment.py / classify.py / dsp.py --
     this class reads their outputs and draws them."""
 
-    def __init__(self, source: AudioSource, mic_factory=None, file_source: AudioSource | None = None) -> None:
+    def __init__(self, source: AudioSource, live_factory=None, file_source: AudioSource | None = None) -> None:
         self.source = source
         self.file_source = file_source  # kept so 'm' can switch back to it
-        self.mic_factory = mic_factory  # callable, so a mic is only opened on demand
+        self.live_factory = live_factory  # callable, so the mic/serial port is only opened on demand
         self.segmenter = HeartSegmenter(sample_rate=source.sample_rate, buffer_s=BUFFER_S)
 
         self.result: SegmentResult | None = None
@@ -102,22 +102,22 @@ class TriageApp:
             plt.close(self.fig)
 
     def _toggle_source(self) -> None:
-        """One-key switch between file playback and the live mic, per CLAUDE.md's
-        on-stage-fallback requirement. Failures here (no PortAudio, no device) are
-        shown in the status line rather than raised -- a demo should never crash on a
-        keypress.
+        """One-key switch between file playback and the live input (microphone or
+        the Mega 2560 over serial, whichever live_factory was configured with), per
+        CLAUDE.md's on-stage-fallback requirement. Failures here (no PortAudio, no
+        device, board unplugged) are shown in the status line rather than raised --
+        a demo should never crash on a keypress.
         """
         try:
-            if isinstance(self.source, MicSource):
+            if isinstance(self.source, FileSource):
+                if self.live_factory is None:
+                    raise RuntimeError("no live source configured")
+                self.source = self.live_factory()
+            else:
                 if self.file_source is None:
                     raise RuntimeError("no file source configured")
                 self.source.close()
                 self.source = self.file_source
-            else:
-                if self.mic_factory is None:
-                    raise RuntimeError("no microphone configured")
-                new_mic = self.mic_factory()
-                self.source = new_mic
         except Exception as exc:  # noqa: BLE001 -- deliberately broad: never crash on 'm'
             self._source_switch_error = str(exc)
             return
@@ -125,10 +125,11 @@ class TriageApp:
         self.segmenter.reset()
 
     def _source_label(self) -> str:
-        if isinstance(self.source, MicSource):
-            return "source: microphone  ['m' = file, 'q' = quit]"
-        name = getattr(self.source, "path", "file")
-        return f"source: {Path(name).name if name != 'file' else name}  ['m' = mic, 'q' = quit]"
+        if isinstance(self.source, FileSource):
+            name = getattr(self.source, "path", "file")
+            return f"source: {Path(name).name if name != 'file' else name}  ['m' = live, 'q' = quit]"
+        kind = "microphone" if isinstance(self.source, MicSource) else "serial (hardware)"
+        return f"source: {kind}  ['m' = file, 'q' = quit]"
 
     def _step(self) -> None:
         try:
@@ -202,38 +203,51 @@ class TriageApp:
         plt.show()
 
 
-def build_app(file_path: str | None, use_mic: bool) -> TriageApp:
+def build_app(file_path: str | None, use_mic: bool, serial_port: str | None = None) -> TriageApp:
     file_source = FileSource(file_path, loop=True) if file_path else None
 
-    def mic_factory() -> MicSource:
-        return MicSource()
+    if use_mic and serial_port:
+        raise ValueError("pass --mic or --serial, not both")
 
-    if use_mic:
+    if serial_port:
+        from sources import SerialMicSource
+
+        def live_factory() -> AudioSource:
+            return SerialMicSource(serial_port)
+    else:
+        def live_factory() -> AudioSource:
+            return MicSource()
+
+    if use_mic or serial_port:
         try:
-            initial: AudioSource = mic_factory()
+            initial: AudioSource = live_factory()
         except RuntimeError as exc:
-            print(f"Microphone unavailable ({exc}); starting from file instead.", file=sys.stderr)
+            print(f"Live source unavailable ({exc}); starting from file instead.", file=sys.stderr)
             if file_source is None:
                 raise
             initial = file_source
     else:
         if file_source is None:
-            raise ValueError("no --file given and --mic not requested")
+            raise ValueError("no --file given and neither --mic nor --serial requested")
         initial = file_source
 
-    return TriageApp(initial, mic_factory=mic_factory, file_source=file_source)
+    return TriageApp(initial, live_factory=live_factory, file_source=file_source)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Pulso live triage display")
     parser.add_argument("--file", type=str, default=None, help="WAV file to play back")
     parser.add_argument("--mic", action="store_true", help="start from the live microphone")
+    parser.add_argument(
+        "--serial", type=str, default=None, metavar="PORT",
+        help="start from the Mega 2560 hardware over USB serial, e.g. /dev/ttyUSB0 or COM3",
+    )
     args = parser.parse_args()
 
-    if not args.file and not args.mic:
-        parser.error("pass --file <wav> and/or --mic")
+    if not args.file and not args.mic and not args.serial:
+        parser.error("pass --file <wav>, --mic, and/or --serial <port>")
 
-    app = build_app(args.file, args.mic)
+    app = build_app(args.file, args.mic, args.serial)
     app.run()
     return 0
 

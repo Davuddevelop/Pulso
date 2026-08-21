@@ -10,6 +10,12 @@ soundfile
 # can still import sources.py.
 sounddevice
 
+# Hardware capture over USB serial (ELEGOO Mega 2560, hardware/pulso_mic.ino).
+# New dependency, added when real hardware became available -- flagging it
+# rather than adding it silently. Imported lazily by SerialMicSource, same
+# reasoning as sounddevice above.
+pyserial
+
 matplotlib
 
 # torch is deliberately NOT listed. It is only installed if the CNN happens.

@@ -9,21 +9,38 @@
  * sketch's only job is to get clean, correctly-timed samples off the board.
  *
  * UNTESTED ON REAL HARDWARE. Written from the datasheet and known-good AVR
- * timer/ADC patterns, not verified against an actual hoard. Sanity-check it
+ * timer/ADC patterns, not verified against an actual board. Sanity-check it
  * with tools/check_serial_source.py before wiring it into app.py.
  *
  * ---- Wiring ----
- * Analog signal in -> A0.
+ * Confirmed sensor: a Keyes KY-038/KY-037-style sound sensor module
+ * (electret microphone capsule + LM393 comparator + onboard amplifier).
+ * Its AO pin is already amplified and DC-biased -- no external bias circuit
+ * needed, unlike a bare piezo disc (see below):
  *
- * If the sensor is a labeled breakout with VCC/GND/AO/DO pins: VCC->5V,
- * GND->GND, AO->A0. Nothing else needed.
+ *   VCC -> 5V
+ *   GND -> GND
+ *   AO  -> A0
+ *   DO  -> unused (digital threshold trigger, not what this sketch reads)
  *
- * If it is a bare piezo disc (two wire leads, no board attached): the ADC
- * only reads 0-5V, but a piezo swings both positive and negative around
- * zero, so it needs a DC bias to sit mid-range instead of clipping at 0V.
- * Two same-value resistors (100-220k ohm) as a divider hold A0 at ~2.5V;
- * the piezo's own internal capacitance couples its AC signal onto that
- * node without needing a separate coupling capacitor:
+ * Caveat worth testing for, not assuming away: this module is built for
+ * airborne sound (voice, claps), not contact/vibration sensing, and its
+ * electret capsule + amplifier stage may not have flat response down into
+ * the 20-200 Hz heart-sound band dsp.py's HEART_BAND filters for -- electret
+ * mic circuits are usually voice-optimized (roughly 100 Hz and up). Whether
+ * there is enough usable low-frequency signal is an open question;
+ * tools/check_serial_source.py's plot is the way to find out. Placing the
+ * capsule directly against skin (or inside a small acoustic coupling cup,
+ * the way a DIY stethoscope head is often built) will matter more here than
+ * it would for a true contact transducer.
+ *
+ * If this turns out not to have enough bass response, or the sensor changes
+ * to a bare piezo disc (two wire leads, no board attached) as a fallback: a
+ * piezo swings both positive and negative around zero, so it needs a DC bias
+ * to sit mid-range in the ADC's 0-5V window instead of clipping at 0V. Two
+ * same-value resistors (100-220k ohm) as a divider hold A0 at ~2.5V; the
+ * piezo's own internal capacitance couples its AC signal onto that node
+ * without needing a separate coupling capacitor:
  *
  *   5V ---[R]--- A0 ---[R]--- GND
  *                 |

@@ -260,17 +260,22 @@ physical sensor, because there is no board in this environment. Run
 reports the range and DC bias, and flags the most likely wiring problems (no signal,
 signal pinned at a rail) before you touch `app.py`.
 
-**The sensor itself is not positively identified.** What's on hand includes a
-copper/orange disc wired to a small breakout board with a blue trim potentiometer —
-most likely a piezo element into a generic LM393 comparator carrier board (the same
-board template these kits reuse across sound/flame/tilt sensors), but this was not
-confirmed against a labelled part number. If it turns out to be a bare piezo disc, it
-needs a DC bias to sit mid-range in the ADC's 0–5V window instead of clipping — the
-wiring comment at the top of `pulso_mic.ino` has the two-resistor bias circuit and an
-optional diode clamp for over-voltage protection (piezo discs can spike well past 5V
-when struck). If the breakout board turns out to be labelled and already outputs a
-conditioned analog signal, skip the bias circuit entirely and wire its AO pin straight
-to A0.
+**Sensor: confirmed as a Keyes KY-038/KY-037-style sound sensor module** (electret
+microphone capsule + LM393 comparator + onboard amplifier). Wiring is simple — VCC→5V,
+GND→GND, AO→A0, DO unused — no bias circuit needed, since the module's AO output is
+already amplified and DC-biased. The two-resistor bias circuit and diode clamp in
+`pulso_mic.ino`'s wiring comment are kept as a documented fallback for a bare piezo
+disc, in case the sensor changes or the KY-038's response turns out too voice-band-
+limited (see below), not because the current sensor needs them.
+
+**Open question, not assumed away: does this module have enough bass response for
+heart sound?** KY-038-style modules are built for airborne sound — voice, claps — and
+their amplifier stage is usually tuned for that range, not necessarily flat down into
+the 20–200 Hz band `dsp.py`'s `HEART_BAND` filters for. Whether there's enough usable
+low-frequency signal is genuinely unknown until measured. `check_serial_source.py`'s
+plot is the way to find out; placing the capsule directly against skin, or inside a
+small acoustic coupling cup the way a DIY stethoscope head is built, will matter more
+here than it would for a true contact transducer.
 
 ```bash
 python tools/check_serial_source.py /dev/ttyUSB0   # or COM3 on Windows
